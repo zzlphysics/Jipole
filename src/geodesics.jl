@@ -1,6 +1,8 @@
 
 export init_XK
-function init_XK(i::Int, j::Int, Xcam::MVec4, res,θo, fovx::Float64, fovy::Float64)
+
+
+function init_XK!(X::AbstractVector{T}, Kcon::AbstractVector{T}, i::Int, j::Int, Xcam::AbstractVector{T}, nx::Int, ny::Int, fovx, fovy, bhspin) where T
     """
     Initializes a geodesic from the camera
 
@@ -13,6 +15,41 @@ function init_XK(i::Int, j::Int, Xcam::MVec4, res,θo, fovx::Float64, fovy::Floa
     @fovy: Field of view in the y-direction.
     """
 
+    Econ = MMatrix{4,4,T}(undef)
+    Ecov = MMatrix{4,4,T}(undef)
+    Kcon_tetrad = MVector{4,T}(undef)
+
+    _, Econ, Ecov = make_camera_tetrad(Xcam, bhspin)
+    dxoff::Float64 = (i + 0.5 - 0.01) / nx - 0.5
+    dyoff::Float64 = (j + 0.5) / ny - 0.5
+    Kcon_tetrad[1] = zero(T)
+    Kcon_tetrad[2] = (dxoff * cos(zero(T)) - dyoff * sin(zero(T))) * fovx
+    Kcon_tetrad[3] = (dxoff * sin(zero(T)) + dyoff * cos(zero(T))) * fovy
+    Kcon_tetrad[4] = one(T)
+
+    Kcon_tetrad = null_normalize(Kcon_tetrad, one(T))
+    tetrad_to_coordinate!(Kcon, Econ, Kcon_tetrad)
+    @inbounds for mu in 1:NDIM
+        X[mu] = Xcam[mu]
+    end
+    #@printf("For pixel (%d, %d) Xcam = [%g, %g, %g, %g]\n", i, j, Xcam[1], Xcam[2], Xcam[3], Xcam[4])
+    #@printf("For pixel (%d, %d) Kcon = [%.15e, %.15e, %.15e, %.15e]\n", i,j, Kcon[1], Kcon[2], Kcon[3], Kcon[4])
+end
+
+
+function init_XK_local_tetrad(i::Int, j::Int, Xcam::MVec4, res, fovx::Float64, fovy::Float64, bhspin::Float64)
+    """
+    Computes the initial four-momentum of a geodesic in local tetrad coordinates.
+
+    Parameters:
+    @i: x-index of the pixel in the image plane.
+    @j: y-index of the pixel in the image plane.
+    @Xcam: Position vector of the camera in internal coordinates.
+    @res: resolution of the image.
+    @fovx: Field of view in the x-direction.
+    @fovy: Field of view in the y-direction.
+    """
+
     Econ = MMat4(undef)
     Ecov = MMat4(undef)
     Kcon = MVec4(undef)
@@ -20,9 +57,7 @@ function init_XK(i::Int, j::Int, Xcam::MVec4, res,θo, fovx::Float64, fovy::Floa
     X = MVec4(undef)
 
 
-    _, Econ, Ecov = make_camera_tetrad(Xcam)
-    print_matrix("Econ ",Econ)
-    error()
+    _, Econ, Ecov = make_camera_tetrad(Xcam, bhspin)
     dxoff::Float64 = (i + 0.5 - 0.01) / res - 0.5
     dyoff::Float64 = (j + 0.5) / res - 0.5
     Kcon_tetrad[1] = 0.0
@@ -30,16 +65,91 @@ function init_XK(i::Int, j::Int, Xcam::MVec4, res,θo, fovx::Float64, fovy::Floa
     Kcon_tetrad[3] = (dxoff * sin(0) + dyoff * cos(0)) * fovy
     Kcon_tetrad[4] = 1.0
 
+    #Put it in the order that krang uses it
+    #Maybe we have to flip the first sign? Depends if Krang accepts the contravariant or covariant form
     Kcon_tetrad = null_normalize(Kcon_tetrad, 1.0)  
-    Kcon = tetrad_to_coordinate(Econ, Kcon_tetrad)
-    for mu in 1:NDIM
-        X[mu] = Xcam[mu]
-    end
 
-    return X, Kcon
+    Kdom = [Kcon_tetrad[1], Kcon_tetrad[4], Kcon_tetrad[2] , Kcon_tetrad[3]]
+
+    return Kdom
+
 end
 
-function get_pixel(i::Int, j::Int, Xcam::MVec4, eps_ipole, maxnstep, fovx::Float64, fovy::Float64, freq::Float64, res, θo)
+# function BHV_C(a::Float64, θs::Float64, ro::Float64, νθ::Float64, eta::Float64, lambda::Float64, Δτ::Float64, rmax::Float64)
+#     """
+#     Calls trevor's C function to calculate the geodesic for a given black hole spin and camera position.
+#     """
+
+#     ccall((generateTrajectory, trevor.so), Cvoid, Cdouble, Cdouble, Cdouble, Cdouble, Cdouble, Cdouble, Cdouble, Cdouble,
+#           a, θs, ro, νθ, eta, lambda, Δτ, rmax)
+# end
+
+function KrangGeoTracing(bhspin::Float64, θo::Float64, ro::Float64, fovx::Float64, fovy::Float64, npoints::Int64, nx::Int64, ny::Int64)
+    """
+    Calculates the geodesics uniformly in minotime for a given black hole spin and camera position.
+    Parameters:
+    @bhspin: Spin of the black hole.
+    @θo: Polar angle of the camera.
+    @ro: Radial distance of the camera from the black hole.
+    @fovx: Field of view in the x-direction.
+    @fovy: Field of view in the y-direction.
+    @npoints: Number of geodesics points
+    """
+
+    if(nx != ny)
+        error("Different number of pixels in x and y direction is not currently supported.")
+    end
+    #Set up the spin of the black hole for Krang
+    metric = Krang.Kerr(bhspin);
+
+    #position of the camera in native coordinates
+    Xcam = camera_position(ro, θo * 180/π, 0.0, bhspin, Rout)
+
+    
+    # Calculate the four-momentum of the photon at the camera position
+    Kcon = Array{Any}(undef, nx, ny)
+    for i in 1:nx
+        for j in 1:ny
+            Kcon[i, j] = init_XK_local_tetrad(i, j, Xcam, nx, fovx, fovy, bhspin)
+        end
+    end
+
+
+    #Initialize the camera pixel for each Kcon
+    camera_k = Array{Any}(undef, nx, ny)
+    for i in 1:nx
+        for j in 1:ny
+            camera_k[i, j] = Krang.IntensityPixel(metric, Kcon[i,j], θo, ro)
+        end
+    end
+
+
+    #spit out the geodesics points for every pixel
+    lines = [Krang.generate_ray(camera_k[i, j], npoints) for i in 1:res, j in 1:res]
+
+
+    #Comment this out. This should be the rays generated by giving latitude and longitude
+    #camera = Krang.IntensityCamera(metric, θo, ro,-fovx, fovx, -fovy, fovy, res);
+    #lines = Krang.generate_ray.(camera.screen.pixels, geopoints)
+
+
+    #This convert the lines to KS coordinates
+    lines_ks = Array{Any}(undef, res * res)
+    metric = Krang.Kerr(bhspin);
+    for idx in eachindex(lines)
+        line = lines[idx]
+        lines_ks[idx] = [
+            begin
+                (; ts=pt.ts, rs=pt.rs, θs=pt.θs, ϕs=Krang.ϕ_kerr_schild(metric, pt.rs, pt.ϕs))
+            end
+            for pt in line
+        ]
+    end
+    println("Number of rays: ", length(lines))
+    return lines_ks
+end
+
+function get_pixel(i::Int, j::Int, Xcam::MVec4, maxnstep, fovx::Float64, fovy::Float64, freq::Float64, nx::Int64,ny::Int64, bhspin::Float64, Rh::Float64, Rout::Float64, Rstop::Float64)
     """
     Evolves the geodesic for each pixel.
     Parameters:
@@ -54,15 +164,16 @@ function get_pixel(i::Int, j::Int, Xcam::MVec4, eps_ipole, maxnstep, fovx::Float
     X = MVec4(undef)
     Kcon = MVec4(undef)
 
-    X, Kcon = init_XK(i, j, Xcam, res, θo, fovx, fovy)
-
+    init_XK!(X, Kcon, i, j, Xcam, nx,ny, fovx, fovy, bhspin)
+    
     for mu in 1:NDIM
         Kcon[mu] *= freq
     end
     traj = Vector{OfTraj}()
     sizehint!(traj, maxnstep)
-    nstep = trace_geodesic(X, Kcon, traj, eps_ipole, maxnstep, i, j)
+    nstep = trace_geodesic(X, Kcon, traj, maxnstep, i, j, bhspin, Rh, Rout, Rstop)
     resize!(traj, length(traj)) 
+
 
     if nstep >= maxnstep - 1
         @error "Max number of steps exceeded at pixel ($i, $j)"
@@ -71,15 +182,95 @@ function get_pixel(i::Int, j::Int, Xcam::MVec4, eps_ipole, maxnstep, fovx::Float
     return traj, nstep
 end
 
+function CalculateGeodesics(Xcam, fovx, fovy, freq_cgs, maxnstep, nx, ny, bhspin, Rout, Rstop)
+    """
+    Calculate the geodesics for the given camera position and field of view.
+    
+    Parameters:
+    @Xcam: Camera position in native coordinates.
+    @fovx: Field of view in x direction in radians.
+    @fovy: Field of view in y direction in radians.
+    @freq_cgs: Frequency in cgs units.
+    @maxnstep: Maximum number of steps for the geodesic integration.
+    @res: Resolution of the image (number of pixels).
+    
+    Returns:
+    A matrix of geodesic trajectories for each pixel.
+    """
+    Rh = 1 + sqrt(1. - bhspin * bhspin);  # Radius of the horizon
+    println("Utilizing $(Threads.nthreads()) threads for geodesic calculation.")
+    trajs = Matrix{Vector{OfTraj}}(undef, nx, ny)
+    freq_unitless = freq_cgs * HPL/(ME * CL * CL)  # Convert frequency to unitless
+    for i in 0:(nx - 1)
+        println("Processing row $i out of $(nx)")
+        Threads.@threads for j in 0:(ny - 1)
+            traj, nstep = get_pixel(i, j, Xcam, maxnstep, fovx, fovy, freq_unitless, nx, ny, bhspin, Rh, Rout, Rstop)
+            trajs[i+1, j+1] = traj
+        end
+    end
+    return trajs
+end
 
-function get_connection_analytic(X::MVec4)
+# function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin) where T
+#     DEL = 1.e-7
+#     NDIM = length(X)
+    
+#     # Initialize arrays
+    
+#     # same type as lconn but filled with zeros
+#     tmp = similar(lconn)
+#     fill!(tmp, 0.0)
+#     Xh = copy(X)
+#     Xl = copy(X)
+
+    
+#     # Get covariant and contravariant metric tensors
+#     gcov = gcov_func(X, bhspin)
+#     gcon = gcon_func(gcov)
+    
+#     # Compute numerical derivatives of the metric tensor
+#     for k in 1:NDIM
+#         # Reset coordinate arrays
+#         Xh .= X
+#         Xl .= X
+        
+#         # Perturb k-th coordinate
+#         Xh[k] += DEL
+#         Xl[k] -= DEL
+        
+#         # Get metric at perturbed points
+#         gh = gcov_func(Xh, bhspin)
+#         gl = gcov_func(Xl, bhspin)
+
+#         # Compute derivative
+#         for i in 1:NDIM, j in 1:NDIM
+#             lconn[i, j, k] = (gh[i, j] - gl[i, j]) / (Xh[k] - Xl[k])
+#         end
+#     end
+    
+#     # Rearrange to find Christoffel symbols of the first kind: Γ_{ijk}
+#     for i in 1:NDIM, j in 1:NDIM, k in 1:NDIM
+#         tmp[i, j, k] = 0.5 * (lconn[j, i, k] + lconn[k, i, j] - lconn[k, j, i])
+#     end
+    
+#     # Raise the first index using contravariant metric: Γ^i_{jk} = g^{il} Γ_{ljk}
+#     fill!(lconn, 0.0)
+#     for i in 1:NDIM, j in 1:NDIM, k in 1:NDIM
+#         for l in 1:NDIM
+#             lconn[i, j, k] += gcon[i, l] * tmp[l, j, k]
+#         end
+#     end
+    
+#     return nothing
+# end
+
+function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin) where T
     """
     Returns the analytical connection coefficients in Kerr-Schild coordinates.
 
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    lconn = zeros(4, 4, 4)
     
     r1 = exp(X[2]) 
     r2 = r1 * r1
@@ -100,13 +291,13 @@ function get_connection_analytic(X::MVec4)
     cth2 = cth * cth
     cth4 = cth2 * cth2
     s2th = 2.0 * sth * cth
-    c2th = 2 * cth2 - 1.0
+    c2th = 2.0 * cth2 - 1.0
 
-    a2 = a * a
+    a2 = bhspin * bhspin
     a2sth2 = a2 * sth2
     a2cth2 = a2 * cth2
-    a3 = a2 * a
-    a4 = a3 * a
+    a3 = a2 * bhspin
+    a4 = a3 * bhspin
     a4cth4 = a4 * cth4
 
     rho2 = r2 + a2cth2
@@ -125,12 +316,12 @@ function get_connection_analytic(X::MVec4)
     lconn[1, 1, 1] = 2.0 * r1 * fac1_rho23
     lconn[1, 1, 2] = r1 * (2.0 * r1 + rho2) * fac1_rho23
     lconn[1, 1, 3] = -a2 * r1 * s2th * dthdx2 * irho22
-    lconn[1, 1, 4] = -2.0 * a * r1sth2 * fac1_rho23
+    lconn[1, 1, 4] = -2.0 * bhspin * r1sth2 * fac1_rho23
 
     lconn[1, 2, 1] = lconn[1, 1, 2]
     lconn[1, 2, 2] = 2.0 * r2 * (r4 + r1 * fac1 - a4cth4) * irho23
     lconn[1, 2, 3] = -a2 * r2 * s2th * dthdx2 * irho22
-    lconn[1, 2, 4] = a * r1 * (-r1 * (r3 + 2 * fac1) + a4cth4) * sth2 * irho23
+    lconn[1, 2, 4] = bhspin * r1 * (-r1 * (r3 + 2 * fac1) + a4cth4) * sth2 * irho23
 
     lconn[1, 3, 1] = lconn[1, 1, 3]
     lconn[1, 3, 2] = lconn[1, 2, 3]
@@ -145,12 +336,12 @@ function get_connection_analytic(X::MVec4)
     lconn[2, 1, 1] = fac3 * fac1 / (r1 * rho23)
     lconn[2, 1, 2] = fac1 * (-2.0 * r1 + a2sth2) * irho23
     lconn[2, 1, 3] = 0.0
-    lconn[2, 1, 4] = -a * sth2 * fac3 * fac1 / (r1 * rho23)
+    lconn[2, 1, 4] = -bhspin * sth2 * fac3 * fac1 / (r1 * rho23)
 
     lconn[2, 2, 1] = lconn[2, 1, 2]
     lconn[2, 2, 2] = (r4 * (-2.0 + r1) * (1.0 + r1) + a2 * (a2 * r1 * (1.0 + 3.0 * r1) * cth4 + a4 * cth4 * cth2 + r3 * sth2 + r1 * cth2 * (2.0 * r1 + 3.0 * r3 - a2sth2))) * irho23
     lconn[2, 2, 3] = -a2 * dthdx2 * s2th / fac2
-    lconn[2, 2, 4] = a * sth2 * (a4 * r1 * cth4 + r2 * (2 * r1 + r3 - a2sth2) + a2cth2 * (2.0 * r1 * (-1.0 + r2) + a2sth2)) * irho23
+    lconn[2, 2, 4] = bhspin * sth2 * (a4 * r1 * cth4 + r2 * (2 * r1 + r3 - a2sth2) + a2cth2 * (2.0 * r1 * (-1.0 + r2) + a2sth2)) * irho23
 
     lconn[2, 3, 1] = lconn[2, 1, 3]
     lconn[2, 3, 2] = lconn[2, 2, 3]
@@ -165,12 +356,12 @@ function get_connection_analytic(X::MVec4)
     lconn[3, 1, 1] = -a2 * r1 * s2th * irho23_dthdx2
     lconn[3, 1, 2] = r1 * lconn[3, 1, 1]
     lconn[3, 1, 3] = 0.0
-    lconn[3, 1, 4] = a * r1 * (a2 + r2) * s2th * irho23_dthdx2
+    lconn[3, 1, 4] = bhspin * r1 * (a2 + r2) * s2th * irho23_dthdx2
 
     lconn[3, 2, 1] = lconn[3, 1, 2]
     lconn[3, 2, 2] = r2 * lconn[3, 1, 1]
     lconn[3, 2, 3] = r2 * irho2
-    lconn[3, 2, 4] = (a * r1 * cth * sth * (r3 * (2.0 + r1) + a2 * (2.0 * r1 * (1.0 + r1) * cth2 + a2 * cth4 + 2 * r1sth2))) * irho23_dthdx2
+    lconn[3, 2, 4] = (bhspin * r1 * cth * sth * (r3 * (2.0 + r1) + a2 * (2.0 * r1 * (1.0 + r1) * cth2 + a2 * cth4 + 2 * r1sth2))) * irho23_dthdx2
 
     lconn[3, 3, 1] = lconn[3, 1, 3]
     lconn[3, 3, 2] = lconn[3, 2, 3]
@@ -182,32 +373,32 @@ function get_connection_analytic(X::MVec4)
     lconn[3, 4, 3] = lconn[3, 3, 4]
     lconn[3, 4, 4] = -cth * sth * (rho23 + a2sth2 * rho2 * (r1 * (4.0 + r1) + a2cth2) + 2.0 * r1 * a4 * sth4) * irho23_dthdx2
 
-    lconn[4, 1, 1] = a * fac1_rho23
+    lconn[4, 1, 1] = bhspin * fac1_rho23
     lconn[4, 1, 2] = r1 * lconn[4, 1, 1]
-    lconn[4, 1, 3] = -2.0 * a * r1 * cth * dthdx2 / (sth * rho22)
+    lconn[4, 1, 3] = -2.0 * bhspin * r1 * cth * dthdx2 / (sth * rho22)
     lconn[4, 1, 4] = -a2sth2 * fac1_rho23
 
     lconn[4, 2, 1] = lconn[4, 1, 2]
-    lconn[4, 2, 2] = a * r2 * fac1_rho23
-    lconn[4, 2, 3] = -2 * a * r1 * (a2 + 2 * r1 * (2.0 + r1) + a2 * c2th) * cth * dthdx2 / (sth * fac2 * fac2)
+    lconn[4, 2, 2] = bhspin * r2 * fac1_rho23
+    lconn[4, 2, 3] = -2 * bhspin * r1 * (a2 + 2 * r1 * (2.0 + r1) + a2 * c2th) * cth * dthdx2 / (sth * fac2 * fac2)
     lconn[4, 2, 4] = r1 * (r1 * rho22 - a2sth2 * fac1) * irho23
 
     lconn[4, 3, 1] = lconn[4, 1, 3]
     lconn[4, 3, 2] = lconn[4, 2, 3]
-    lconn[4, 3, 3] = -a * r1 * dthdx22 * irho2
+    lconn[4, 3, 3] = -bhspin * r1 * dthdx22 * irho2
     lconn[4, 3, 4] = dthdx2 * (0.25 * fac2 * fac2 * cth / sth + a2 * r1 * s2th) * irho22
 
     lconn[4, 4, 1] = lconn[4, 1, 4]
     lconn[4, 4, 2] = lconn[4, 2, 4]
     lconn[4, 4, 3] = lconn[4, 3, 4]
-    lconn[4, 4, 4] = (-a * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23
+    lconn[4, 4, 4] = (-bhspin * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23
 
-    return lconn
 end
 
 
 
-function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf::MVec4)
+
+function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf::MVec4, lconn::Tensor3D, bhspin::Float64)
     """
     Pushes the photon geodesic forward/backwards by a step size dl/-dl using the analytic connection coefficients.
     Parameters:
@@ -218,58 +409,40 @@ function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf
     @Kconhalf: Covariant 4-vector of the photon at the half-step.
     """
 
-    lconn = Tensor3D(undef)
+    dKcon::Float64 = 0.0
 
-    dKcon = MVec4(undef)
-    Xh = MVec4(undef)
-    Kconh = MVec4(undef)
+    get_connection_analytic!(X, lconn, bhspin)
 
-    lconn = get_connection_analytic(X)
-
-    for k in 1:NDIM
-        for i in 1:NDIM
-            for j in 1:NDIM
-                dKcon[k] -= 0.5 * dl * lconn[k, i, j] * Kcon[i] * Kcon[j]
+    @inbounds for k in 1:NDIM
+        @inbounds for i in 1:NDIM
+            @inbounds for j in 1:NDIM
+                dKcon -= 0.5 * dl * lconn[k, i, j] * Kcon[i] * Kcon[j]
             end
         end
-    end
-    for k in 1:NDIM
-        Kconh[k] = Kcon[k] + dKcon[k]
+        Kconhalf[k] = Kcon[k] + dKcon
+        Xhalf[k] = X[k] + 0.5 * dl * Kcon[k]
+        dKcon = 0.0
     end
         
 
-    for i in 1:NDIM
-        Xh[i] = X[i] + 0.5 * dl * Kcon[i]
-    end
+    get_connection_analytic!(Xhalf, lconn, bhspin)
 
-    for i in 1:NDIM
-        Xhalf[i] = Xh[i]
-        Kconhalf[i] = Kconh[i]
-    end
+    dKcon = 0.0
 
-    lconn = get_connection_analytic(Xh)
-
-    fill!(dKcon, 0.0)
-
-    for k in 1:NDIM
-        for i in 1:NDIM
-            for j in 1:NDIM
-                dKcon[k] -= dl * lconn[k, i, j] * Kconh[i] * Kconh[j]
+    @inbounds for k in 1:NDIM
+        @inbounds for i in 1:NDIM
+            @inbounds for j in 1:NDIM
+                dKcon -= dl * lconn[k, i, j] * Kconhalf[i] * Kconhalf[j]
             end
         end
-    end
-
-    for k in 1:NDIM
-        Kcon[k] += dKcon[k]
-    end
-
-    for k in 1:NDIM
-        X[k] += dl * Kconh[k]
+        Kcon[k] += dKcon
+        X[k] += dl * Kconhalf[k]
+        dKcon = 0.0
     end
 end
 
 const DEL = 1.e-7
-function get_connection(X::MVec4)
+function get_connection(X::MVec4, bhspin::Float64)
     """
     Returns the connection coefficients in Kerr-Schild coordinates using finite differences.
     Parameters:
@@ -284,7 +457,7 @@ function get_connection(X::MVec4)
     gh = MMat4(undef)
     gl = MMat4(undef)
 
-    gcov = gcov_func(X)
+    gcov = gcov_func(X, bhspin)
     gcon = gcon_func(gcov)
 
     for k in 1:NDIM
@@ -293,8 +466,8 @@ function get_connection(X::MVec4)
         Xh[k] += DEL
         Xl[k] -= DEL
 
-        gh = gcov_func(Xh)
-        gl = gcov_func(Xl)
+        gh = gcov_func(Xh, bhspin)
+        gl = gcov_func(Xl, bhspin)
 
 
 
@@ -329,7 +502,7 @@ function get_connection(X::MVec4)
 end
 
 
-function stepsize(X::MVec4, Kcon::MVec4, eps::Float64)
+function stepsize(X::MVec4, Kcon::MVec4, cstartx::MVec4, cstopx::MVec4, eps_ipole::Float64 = 0.01)
     """
     Computes the step size for the geodesic integration based on the position and covariant 4-vector.
     Parameters:
@@ -344,27 +517,27 @@ function stepsize(X::MVec4, Kcon::MVec4, eps::Float64)
     idlx3::Float64 = 0.0
     idlx4::Float64 = 0.0
     dl::Float64 = 0.0
-
+        
     
     if(true)
         deh::Float64 = min(abs(X[2] - cstartx[2]), 0.1)
-        dlx2 = eps * (10 * deh) / (abs(Kcon[2]) + SMALL*SMALL)
+        dlx2 = eps_ipole * (10 * deh) / (abs(Kcon[2]) + SMALL*SMALL)
         cut::Float64 = 0.02
         lx3::Float64 = cstopx[3] - cstartx[3]
         dpole::Float64 = min(abs(X[3] / lx3), abs((cstopx[3] - X[3]) / lx3))
         d2fac::Float64 = (dpole < cut) ? dpole / 3 : min(cut / 3 + (dpole - cut) * 10., 1)
-        dlx3 = eps * d2fac / (abs(Kcon[3]) + SMALL*SMALL)
+        dlx3 = eps_ipole * d2fac / (abs(Kcon[3]) + SMALL*SMALL)
 
-        dlx4 = eps / (abs(Kcon[4]) + SMALL*SMALL)
+        dlx4 = eps_ipole / (abs(Kcon[4]) + SMALL*SMALL)
         idlx2 = 1.0 / (abs(dlx2) + SMALL*SMALL)
         idlx3 = 1.0 / (abs(dlx3) + SMALL*SMALL)
         idlx4 = 1.0 / (abs(dlx4) + SMALL*SMALL)
 
         dl = 1.0 / (idlx2 + idlx3 + idlx4)
     else
-        dlx2 = eps / (abs(Kcon[2]) + SMALL*SMALL)
-        dlx3 = eps * min(X[3], 1. - X[3]) / (abs(Kcon[3]) + SMALL*SMALL)
-        dlx4 = eps / (abs(Kcon[4]) + SMALL*SMALL)
+        dlx2 = eps_ipole / (abs(Kcon[2]) + SMALL*SMALL)
+        dlx3 = eps_ipole * min(X[3], 1. - X[3]) / (abs(Kcon[3]) + SMALL*SMALL)
+        dlx4 = eps_ipole / (abs(Kcon[4]) + SMALL*SMALL)
 
         idlx2 = 1.0 / (abs(dlx2) + SMALL*SMALL)
         idlx3 = 1.0 / (abs(dlx3) + SMALL*SMALL)
@@ -377,7 +550,7 @@ function stepsize(X::MVec4, Kcon::MVec4, eps::Float64)
 end
 
 
-function stop_backward_integration(X::MVec4, Kcon::MVec4)
+function stop_backward_integration(X::MVec4, Kcon::MVec4, Rh::Float64, Rstop::Float64)
     """
     Checks if the backward integration should stop based on the position and covariant 4-vector.
     Parameters:
@@ -391,7 +564,7 @@ function stop_backward_integration(X::MVec4, Kcon::MVec4)
     return 0
 end
 
-function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, eps::Float64, step_max::Int, i::Int, j::Int)
+function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, step_max::Int, i::Int, j::Int, bhspin::Float64, Rh::Float64, Rout::Float64, Rstop::Float64)
     """
     Function loops through the geodesic integration steps, pushing the photon along the geodesic.
     Parameters:
@@ -414,20 +587,24 @@ function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, eps::Floa
         copy(Xi),   
         copy(Kconi),   
         copy(Xi),   
-        copy(Kconi)    
+        copy(Kconi),
+        MVec4(undef), #This is dX_dθo for the derivatives in autodiff
+        MVec4(undef),  #This is dK_dθo for the derivatives in autodiff
+        MVec4(undef),  #This is dX_da for the derivatives in autodiff
+        MVec4(undef)  #This is dK_da for the derivatives in autodiff
     ))
-    
+
+    cstartx = MVec4(0.0, log(Rh), 0.0, 0.0)
+    cstopx = MVec4(0.0, log(Rout), 1.0, 2.0 * π)
     nstep = 1
-    # @printf("X goin in trace_geodesic: %.15e, %.15e, %.15e, %.15e\n", X[1], X[2], X[3], X[4])
-    # @printf("Kcon going in trace_geodesic: %.15e, %.15e, %.15e, %.15e\n", Kcon[1], Kcon[2], Kcon[3], Kcon[4])
-    while (stop_backward_integration(X, Kcon) == 0) && (nstep < step_max)
-        dl = stepsize(X, Kcon, eps)
-        # @printf("Step %d: dl = %.15e\n", nstep, dl)
+    lconn = Tensor3D(undef)
+    while (stop_backward_integration(X, Kcon, Rh, Rstop) == 0) && (nstep < step_max)
+        dl = stepsize(X, Kcon, cstartx, cstopx)
 
         traj[nstep].dl = dl * L_unit * HPL / (ME * CL^2)
 
 
-        push_photon!(X, Kcon, -dl, Xhalf, Kconhalf)
+        push_photon!(X, Kcon, -dl, Xhalf, Kconhalf, lconn, bhspin)
         # if(i == 0 && j == 1)
         #     @printf("At step = %d\n", nstep)
         #     @printf("Radius = %.15e\n", exp(X[2]))
@@ -441,10 +618,13 @@ function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, eps::Floa
             copy(X),   
             copy(Kcon),   
             copy(Xhalf),   
-            copy(Kconhalf)    
+            copy(Kconhalf),
+            MVec4(undef), #This is dX_dθo for the derivatives in autodiff
+            MVec4(undef),  #This is dK_dθo for the derivatives in autodiff
+            MVec4(undef),  #This is dX_da for the derivatives in autodiff
+            MVec4(undef)  #This is dK_da for the derivatives in autodiff
         ))
     end
-    #pop!(traj)
     nstep -= 1
 
 
@@ -452,33 +632,4 @@ function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, eps::Floa
     return nstep
 end
 
-function KrangGeoPinHole(ro, θo, K, met)
-    a = met.spin
-    E,_,_,L = Krang.metric_dd(met, ro, θo) * K
-    λ = L/E
-    η = (Krang.Σ(met, ro, θo)/E * K[3])^2 - (a * cos(θo))^2 + (λ * cot(θo))^2
-    roots = Krang.get_radial_roots(met, η, λ)
-
-    numreals = sum(Krang._isreal2.(roots))
-    if (numreals == 2) && (abs(imag(roots[4]) / real(roots[4])) < eps(Float64))
-        roots = (roots[1], roots[4], roots[2], roots[3])
-    end
-    I0_o = Krang.Ir_s(met, ro, roots, true)
-
-    pinhole_pos = (0.0, 0.0)
-    pix = Pixel(
-    met,
-    pinhole_pos,
-    roots,
-    I0_o,
-    total_mino_time(met, roots),
-    Krang._absGθo_Gθhat(met, θo, η, λ),
-    θo,
-    ro,
-    η,
-    λ
-)
-
-    return pix
-end
 
