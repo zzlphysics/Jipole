@@ -17,7 +17,7 @@ function print_vector(name::String, vec::MVec4)
     end
     println()
 end
-function print_matrix(name::String, mat::MMat4)
+function print_matrix(name::String, mat)
     """
     Returns a string representation of a matrix with the given name.
 

@@ -58,7 +58,7 @@ function root_find(x, cstartx, cstopx)
   return xc[3];
 end
 
-function camera_position(cam_dist::Float64, cam_theta_angle, cam_phi_angle::Float64, bhspin, Rout::Float64)
+function camera_position(cam_dist::Float64, cam_theta_angle, cam_phi_angle::Float64, bhspin)
     """
     Computes the camera position in internal coordinates based on the distance and angles.
     Parameters:
@@ -68,16 +68,15 @@ function camera_position(cam_dist::Float64, cam_theta_angle, cam_phi_angle::Floa
     """
     Rh = 1 + sqrt(1. - bhspin * bhspin);
 
+    X = zero(MVec4)
     T = promote_type(typeof(cam_dist), typeof(cam_theta_angle), typeof(cam_phi_angle), typeof(bhspin))
-    X = zeros(T, 4)
     x = [zero(T), T(cam_dist), T(cam_theta_angle)/T(180) * T(π), T(cam_phi_angle)/T(180) * T(π)]
     cstartx = [zero(T), log(T(Rh)), zero(T), zero(T)]
     cstopx = [zero(T), log(T(Rout)), one(T), T(2) * T(π)]
 
     X[1] = 0.0
     X[2] = log(cam_dist)
-    #X[3] = root_find(x, cstartx, cstopx)
-    X[3] = cam_theta_angle / 180 
+    X[3] = root_find(x, cstartx, cstopx)
     X[4] = cam_phi_angle/180 * π
     return X
 end

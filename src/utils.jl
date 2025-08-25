@@ -1,7 +1,7 @@
 
 export set_Econ_from_trial, normalize_vector
 
-function set_Econ_from_trial(defdir::Int, trial::MVec4)
+function set_Econ_from_trial(defdir::Int, trial)
     """
     Copy the trial vector, however, if the norm of the trial vector is small, set it to default value.
 
@@ -9,7 +9,7 @@ function set_Econ_from_trial(defdir::Int, trial::MVec4)
     @defdir: Direction to define the tetrad vector.
     @trial: Trial vector to set the tetrad vector.
     """
-    Econ = MVec4(undef)
+    Econ = MVector{4, eltype(trial)}(undef)
     norm = sum(abs.(trial[2:4])) 
     for k in 1:4
         if norm <= SMALL
@@ -21,7 +21,7 @@ function set_Econ_from_trial(defdir::Int, trial::MVec4)
     return Econ
 end
 
-function normalize_vector(vcon::MVec4, Gcov::MMat4)
+function normalize_vector(vcon, Gcov)
     """
     Forcing the vector to |v.v| = 1.
 
@@ -46,7 +46,7 @@ function normalize_vector(vcon::MVec4, Gcov::MMat4)
     return vcon_out
 end
 
-function project_out(vcona::MVec4, vconb::MVec4, Gcov::MMat4)
+function project_out(vcona, vconb, Gcov)
     """
     Projects out the component of vcona along vconb using the metric tensor. Output is orthogonal to vconb.
 
@@ -87,7 +87,7 @@ end
 
 
 
-function check_handedness(Econ::MMat4, Gcov::MMat4)
+function check_handedness(Econ, Gcov)
     """
     This will check the handness of the tetrad basis. +1 if right-handed, -1 if left-handed.
 
@@ -101,8 +101,8 @@ function check_handedness(Econ::MMat4, Gcov::MMat4)
         @warn "Encountered singular gcov checking handedness!"
         return (1, 0.0)
     end
-    dot_var::Float64 = 0.0
-    for i in 1:4, j in 1:4, l in 1:4, k in 1:4
+        dot_var = zero(eltype(Econ))  
+        for i in 1:4, j in 1:4, l in 1:4, k in 1:4
         dot_var += g * levi_civita(i-1, j-1, k-1, l-1) * Econ[1, i] * Econ[2, j] * Econ[3, k] * Econ[4, l]
     end
 

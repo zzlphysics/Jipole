@@ -2,39 +2,42 @@
 export theta_func
 
 
-function theta_func(X::MVec4)
+function theta_func(X)
     """
     Computes the theta coordinate from the internal coordinates.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    _, th = bl_coord(X)
+    _, th = bl_coord(X, r, th)
     return th
 end
 
 
 
-
-function bl_to_ks(X::MVec4, ucon_bl::MVec4)
+function bl_to_ks(X, ucon_bl, bhspin)
     """
     Converts the 4-velocity from Boyer-Lindquist coordinates to Kerr-Schild coordinates.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     @ucon_bl: Contravariant 4-velocity in Boyer-Lindquist coordinates.
     """
-    ucon_ks = zero(MVec4)
+    T = promote_type(eltype(X), eltype(ucon_bl), typeof(bhspin))  # Ensure correct type
+    ucon_ks = MVector{4, T}((zero(T), zero(T), zero(T), zero(T)))
+
     r, th = bl_coord(X)
-    trans = MMat4(undef)
-    for μ in 1:NDIM
-        for ν in 1:NDIM
-            trans[μ, ν] = if μ == ν 1.0 else 0.0 end
+    trans = MMatrix{4, 4, T}(undef)
+    for μ in 1:4
+        for ν in 1:4
+            trans[μ, ν] = μ == ν ? one(T) : zero(T)
         end
     end
 
-    trans[1, 2] = 2.0 * r / (r * r - 2.0 * r + a * a)
-    trans[4, 2] = a / (r * r - 2.0 * r + a * a)
-    for μ in 1:NDIM
-        for ν in 1:NDIM
+    denom = r * r - 2.0 * r + bhspin * bhspin
+    trans[1, 2] = 2.0 * r / denom
+    trans[4, 2] = bhspin / denom
+
+    for μ in 1:4
+        for ν in 1:4
             ucon_ks[μ] += trans[μ, ν] * ucon_bl[ν]
         end
     end
@@ -44,7 +47,8 @@ end
 
 
 
-function ks_to_bl(X::MVec4, ucon_ks::MVec4)
+
+function ks_to_bl(X, ucon_ks, bhspin::Float64)
     """
     Converts the 4-velocity from Kerr-Schild coordinates to Boyer-Lindquist coordinates.
     Parameters:
@@ -52,7 +56,7 @@ function ks_to_bl(X::MVec4, ucon_ks::MVec4)
     @ucon_ks: Contravariant 4-velocity in Kerr-Schild coordinates.
     """
     ucon_bl = zero(MVec4)
-    r, th = bl_coord(X)
+    r, _ = bl_coord(X)
 
     trans = MMat4(undef)
     for μ in 1:NDIM
@@ -61,8 +65,8 @@ function ks_to_bl(X::MVec4, ucon_ks::MVec4)
         end
     end
 
-    trans[1,2] = 2.0 * r / (r * r - 2.0 * r + a * a)
-    trans[4,2] = a / (r * r - 2.0 * r + a * a)
+    trans[1,2] = 2.0 * r / (r * r - 2.0 * r + bhspin * bhspin)
+    trans[4,2] = bhspin / (r * r - 2.0 * r + bhspin * bhspin)
 
     # Invert the transformation matrix
     rev_trans = inv(trans)
@@ -79,7 +83,48 @@ end
     
 
     
+function vec_to_bl(X::MVec4, v_nat::MVec4, bhspin::Float64)
+    """
+    Converts a 4-vector from the native coordinate system to Boyer-Lindquist coordinates.
+    Parameters:
+    @X: Vector of position coordinates in internal coordinates.
+    @v_nat: 4-vector in the native coordinate system.
+    """
 
+    #First, convert the vector to Kerr-Schild coordinates
+    v_ks = zero(MVec4)
+    dxdX = MMat4(undef)
+    dxdX = set_dxdX(X)
+    for μ in 1:NDIM
+        for ν in 1:NDIM
+            v_ks[μ] += dxdX[μ, ν] * v_nat[ν]
+        end
+    end
+
+    #Now, convert the Kerr-Schild vector to Boyer-Lindquist coordinates
+    vec_bl = zero(MVec4)
+    r, _ = bl_coord(X)
+    trans = MMat4(undef)
+    for μ in 1:NDIM
+        for ν in 1:NDIM
+            trans[μ, ν] = if μ == ν 1.0 else 0.0 end
+        end
+    end
+    trans[1,2] = 2.0 * r / (r * r - 2.0 * r + bhspin * bhspin)
+    trans[4,2] = bhspin / (r * r - 2.0 * r + bhspin * bhspin)
+
+    # Invert the transformation matrix
+    rev_trans = inv(trans)
+
+    for μ in 1:NDIM
+        ucon_bl[μ] = 0.0
+        for ν in 1:NDIM
+            vec_bl[μ] += rev_trans[μ, ν] * v_ks[ν]
+        end
+    end
+
+    return vec_bl
+end
 
 function vec_to_ks(X::MVec4, v_nat::MVec4)
     """
@@ -101,13 +146,14 @@ function vec_to_ks(X::MVec4, v_nat::MVec4)
     return v_ks
 end
 
-function set_dxdX(X::MVec4)
+function set_dxdX(X)
     """
     Computes the Jacobian matrix dxdX for the transformation from Kerr-Schild coordinates to internal coordinates.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    dxdX = MMat4(undef)
+    T = eltype(X)
+    dxdX = TMMat4{T}(undef)
     hslope = 1.0   
     for mu in 1:NDIM
         for nu in 1:NDIM
@@ -130,13 +176,14 @@ function set_dxdX(X::MVec4)
     return dxdX
 end
 
-function set_dXdx(X::MVec4)
+function set_dXdx(X)
     """
     Computes the inverse Jacobian matrix dXdx for the transformation from internal coordinates to Kerr-Schild coordinates.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    dxdX = MMat4(undef)
+    T = eltype(X)
+    dxdX = TMMat4{T}(undef)
     dxdX = set_dxdX(X)
     #invert matrix to find dXdx from dxdX using linear algebra package
     dXdx = inv(dxdX)
@@ -145,15 +192,16 @@ function set_dXdx(X::MVec4)
 end
 
 
-function vec_from_ks(X::MVec4, v_ks::MVec4)
+function vec_from_ks(X, v_ks)
     """
     Converts a 4-vector from Kerr-Schild coordinates to the native coordinate system.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     @v_ks: 4-vector in Kerr-Schild coordinates.
     """
-    v_nat = zero(MVec4)
-    dXdx = MMat4(undef)
+    v_nat = zero(TMVec4{eltype(v_ks)})
+    T = eltype(X)
+    dXdx = TMMat4{T}(undef)
     dXdx = set_dXdx(X)
 
     for μ in 1:NDIM
@@ -166,7 +214,7 @@ function vec_from_ks(X::MVec4, v_ks::MVec4)
 end
 
 
-function bl_coord(X::MVec4)
+function bl_coord(X, R0::Float64 = 0.0)
     """
     Returns Boyer-Lindquist coordinates (r, th) from internal coordinates (X[2], X[3]).
     Parameters:
@@ -177,7 +225,7 @@ function bl_coord(X::MVec4)
     return r, th
 end
 
-function flip_index(vector::MVec4, metric::MMat4)
+function flip_index(vector, metric)
     """
     Returns the flipped index of a vector using the metric tensor.
     
@@ -185,12 +233,10 @@ function flip_index(vector::MVec4, metric::MMat4)
     @vector: Vector to be flipped.
     @metric: Metric tensor used for flipping.
     """
-    flipped_vector = zero(MVec4)
+    flipped_vector = zero(TMVec4{eltype(metric)})
     for ν in 1:NDIM
         for μ in 1:NDIM
             flipped_vector[ν] += metric[ν, μ] * vector[μ]
-            if (ν == 4)
-            end
         end
     end
     return flipped_vector
