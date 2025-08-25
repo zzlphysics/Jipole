@@ -4,12 +4,12 @@ A Julia-based radiative transfer code for curved spacetimes with automatic diffe
 
 ## Overview
 
-Jipole is an ipole-based Julia implementation designed to perform radiative transfer calculations in curved spacetimes, with a particular focus on black hole imaging. The code leverages Julia's automatic differentiation (autodiff) to compute derivatives of input parameters, enabling gradient based optimization methods. For this project, we used [ForwardDiff.jl](https://github.com/JuliaDiff/ForwardDiff.jl) ([Revels et al. 2016](https://arxiv.org/abs/1607.07892))
+Jipole is an ipole-based Julia implementation designed to perform radiative transfer calculations in curved spacetimes, with a particular focus on black hole imaging. The code leverages Julia's automatic differentiation (autodiff) to compute derivatives of input parameters, enabling gradient based optimization methods. For this project, we used [ForwardDiff.jl](https://github.com/JuliaDiff/ForwardDiff.jl) ([Revels et al. 2016](https://arxiv.org/abs/1607.07892)).
 
 
 ## Current Development Status
 
-The current version of Jipole focuses on implementing and validating the test problems described in **Section 3.2** of [Gold et al. 2020](https://iopscience.iop.org/article/10.3847/1538-4357/ab96c6). This development phase involves porting the well-established C-based[ipole](https://github.com/moscibrodzka/ipole) ([Moscibrodzka & Gammie 2017](https://arxiv.org/abs/1712.03057)) code to Julia with extended functionality.
+The current version of Jipole focuses on implementing and validating the test problems described in **Section 3.2** of [Gold et al. 2020](https://iopscience.iop.org/article/10.3847/1538-4357/ab96c6). We have ported the well-established C-based [ipole](https://github.com/moscibrodzka/ipole) ([Moscibrodzka & Gammie 2017](https://arxiv.org/abs/1712.03057)) code to Julia with some extended functionalities.
 
 
 ## Installation and Setup
