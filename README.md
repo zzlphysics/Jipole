@@ -1,8 +1,4 @@
-![GitHub last commit](https://img.shields.io/github/last-commit/pedronaethe/Jipole)
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/pedronaethe/Jipole/blob/master/License.txt) 
-
-[![GitHub repo stars](https://img.shields.io/github/stars/pedronaethe/Jipole?style=social)](https://github.com/pedronaethe/Jipole)
+![GitHub last commit](https://img.shields.io/github/last-commit/pedronaethe/Jipole) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/pedronaethe/Jipole/blob/master/License.txt) [![GitHub repo stars](https://img.shields.io/github/stars/pedronaethe/Jipole?style=social)](https://github.com/pedronaethe/Jipole)
 
 # Jipole
 
@@ -103,3 +99,4 @@ The black hole spin parameter can be adjusted directly within the Jupyter notebo
 
 
 Reach me at pedronaethemotta@usp.br
+
