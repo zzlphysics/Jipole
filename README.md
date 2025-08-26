@@ -88,6 +88,17 @@ The black hole spin parameter can be adjusted directly within the Jupyter notebo
 2. When creating or opening a notebook, ensure you select the **"Jipole"** kernel from the kernel menu
 3. The Jipole kernel ensures that all Jipole dependencies are automatically loaded
 
+### Notebooks Overview
+
+- **ComputeGeodesics.ipynb**  
+  Computes geodesics for each pixel and allows for **debugging and visualization** of the trajectories. Useful for inspecting geodesics before integrating intensity.  
+
+- **GenerateImage.ipynb**  
+  Computes the **final intensity map** for thin-disk or analytical models, performing **forward integration of emission** along geodesics in a memory-efficient way.  
+
+- **Autodiff.ipynb**  
+  Performs **differentiable ray tracing** to compute **derivatives of the image intensity** with respect to parameters like black hole spin (`a`) and observer inclination (`θ`). Uses the **conjugate gradient algorithm** to recover ground truth parameters from a computed intensity map, demonstrating **gradient-based parameter estimation**.
+
 ## References
 
 - Gold, R. et al. 2020, ApJ, 897, 148: "Verification of Radiative Transfer Schemes for the EHT"
