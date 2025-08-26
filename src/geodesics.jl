@@ -149,7 +149,7 @@ function KrangGeoTracing(bhspin::Float64, θo::Float64, ro::Float64, fovx::Float
     return lines_ks
 end
 
-function get_pixel(i::Int, j::Int, Xcam::MVec4, maxnstep, fovx::Float64, fovy::Float64, freq::Float64, nx::Int64,ny::Int64, bhspin::Float64, Rh::Float64, Rout::Float64, Rstop::Float64)
+function get_pixel(traj::Vector{OfTraj}, i::Int, j::Int, Xcam::MVec4, maxnstep, fovx::Float64, fovy::Float64, freq::Float64, nx::Int64,ny::Int64, bhspin::Float64, Rh::Float64, Rout::Float64, Rstop::Float64)
     """
     Evolves the geodesic for each pixel.
     Parameters:
@@ -169,17 +169,14 @@ function get_pixel(i::Int, j::Int, Xcam::MVec4, maxnstep, fovx::Float64, fovy::F
     for mu in 1:NDIM
         Kcon[mu] *= freq
     end
-    traj = Vector{OfTraj}()
-    sizehint!(traj, maxnstep)
     nstep = trace_geodesic(X, Kcon, traj, maxnstep, i, j, bhspin, Rh, Rout, Rstop)
-    resize!(traj, length(traj)) 
 
 
     if nstep >= maxnstep - 1
         @error "Max number of steps exceeded at pixel ($i, $j)"
     end
 
-    return traj, nstep
+    return nstep
 end
 
 function CalculateGeodesics(Xcam, fovx, fovy, freq_cgs, maxnstep, nx, ny, bhspin, Rout, Rstop)
@@ -201,68 +198,21 @@ function CalculateGeodesics(Xcam, fovx, fovy, freq_cgs, maxnstep, nx, ny, bhspin
     println("Utilizing $(Threads.nthreads()) threads for geodesic calculation.")
     trajs = Matrix{Vector{OfTraj}}(undef, nx, ny)
     freq_unitless = freq_cgs * HPL/(ME * CL * CL)  # Convert frequency to unitless
+
     for i in 0:(nx - 1)
         println("Processing row $i out of $(nx)")
+
         Threads.@threads for j in 0:(ny - 1)
-            traj, nstep = get_pixel(i, j, Xcam, maxnstep, fovx, fovy, freq_unitless, nx, ny, bhspin, Rh, Rout, Rstop)
-            trajs[i+1, j+1] = traj
+            trajs[i+1, j+1] = Vector{OfTraj}()
+            sizehint!(trajs[i+1, j+1], maxnstep)
+            
+            nstep = get_pixel(trajs[i+1, j+1], i, j, Xcam, maxnstep, fovx, fovy, freq_unitless, nx, ny, bhspin, Rh, Rout, Rstop)
+
+            resize!(trajs[i+1, j+1], length(trajs[i+1, j+1]))
         end
     end
     return trajs
 end
-
-# function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin) where T
-#     DEL = 1.e-7
-#     NDIM = length(X)
-    
-#     # Initialize arrays
-    
-#     # same type as lconn but filled with zeros
-#     tmp = similar(lconn)
-#     fill!(tmp, 0.0)
-#     Xh = copy(X)
-#     Xl = copy(X)
-
-    
-#     # Get covariant and contravariant metric tensors
-#     gcov = gcov_func(X, bhspin)
-#     gcon = gcon_func(gcov)
-    
-#     # Compute numerical derivatives of the metric tensor
-#     for k in 1:NDIM
-#         # Reset coordinate arrays
-#         Xh .= X
-#         Xl .= X
-        
-#         # Perturb k-th coordinate
-#         Xh[k] += DEL
-#         Xl[k] -= DEL
-        
-#         # Get metric at perturbed points
-#         gh = gcov_func(Xh, bhspin)
-#         gl = gcov_func(Xl, bhspin)
-
-#         # Compute derivative
-#         for i in 1:NDIM, j in 1:NDIM
-#             lconn[i, j, k] = (gh[i, j] - gl[i, j]) / (Xh[k] - Xl[k])
-#         end
-#     end
-    
-#     # Rearrange to find Christoffel symbols of the first kind: Γ_{ijk}
-#     for i in 1:NDIM, j in 1:NDIM, k in 1:NDIM
-#         tmp[i, j, k] = 0.5 * (lconn[j, i, k] + lconn[k, i, j] - lconn[k, j, i])
-#     end
-    
-#     # Raise the first index using contravariant metric: Γ^i_{jk} = g^{il} Γ_{ljk}
-#     fill!(lconn, 0.0)
-#     for i in 1:NDIM, j in 1:NDIM, k in 1:NDIM
-#         for l in 1:NDIM
-#             lconn[i, j, k] += gcon[i, l] * tmp[l, j, k]
-#         end
-#     end
-    
-#     return nothing
-# end
 
 function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin) where T
     """
@@ -605,13 +555,7 @@ function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, step_max:
 
 
         push_photon!(X, Kcon, -dl, Xhalf, Kconhalf, lconn, bhspin)
-        # if(i == 0 && j == 1)
-        #     @printf("At step = %d\n", nstep)
-        #     @printf("Radius = %.15e\n", exp(X[2]))
-        #     @printf("X after push: %.15e, %.15e, %.15e, %.15e\n", X[1], X[2], X[3], X[4])
-        #     @printf("Kcon after push: %.15e, %.15e, %.15e, %.15e\n", Kcon[1], Kcon[2], Kcon[3], Kcon[4])
-        #     @printf("dl = %.15e, traj.dl = %.15e\n\n", dl, traj[nstep].dl)
-        # end
+
         nstep += 1
         push!(traj, OfTraj(
             copy(dl),
