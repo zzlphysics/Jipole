@@ -109,6 +109,7 @@ The black hole spin parameter can be adjusted directly within the Jupyter notebo
 ## Contact
 
 
-Pedro Naethe Motta at pedronaethemotta [at] usp [.] br
+Pedro Naethe Motta at pedronaethemotta [at] usp [dot] br
+
 
 
