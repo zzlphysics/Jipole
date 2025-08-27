@@ -20,10 +20,21 @@ The current version of Jipole focuses on implementing and validating the test pr
 
 If this is your first time using Jipole, you'll need to set up the Julia environment and install the required dependencies:
 
-```julia
-using Pkg
-Pkg.instantiate()
-```
+1. **Navigate to the project directory**:
+   ```bash
+   cd /path/to/jipole
+   ```
+
+2. **Start Julia with multithreading capabilities**:
+   ```bash
+   julia --project="."
+   ```
+
+3. **Install Packages**
+   ```julia
+   using Pkg
+   Pkg.instantiate()
+   ```
 
 This command will install all the packages specified in the `Project.toml` and `Manifest.toml` files.
 
@@ -110,6 +121,7 @@ The black hole spin parameter can be adjusted directly within the Jupyter notebo
 
 
 Pedro Naethe Motta at pedronaethemotta [at] usp [dot] br
+
 
 
 
