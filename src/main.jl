@@ -41,7 +41,14 @@ include("coords.jl")
 include("tetrads.jl")
 include("utils.jl")
 include("radiation.jl")
+#include("./models/$(MODEL).jl")
+
+##MODELS
 include("./models/$(MODEL).jl")
+#1) iharm
+using .iharm
+#include("/home/raia/Jipole/src/models/iharm.jl")
+
 
 include("geodesics.jl")
 include("autodiff.jl")
@@ -279,3 +286,4 @@ end
 
 #main()
 #GC.gc()
+
