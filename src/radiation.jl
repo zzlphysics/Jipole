@@ -9,19 +9,71 @@ function get_fluid_nu(Kcon, Ucov)
     return nu
 end
 
-function get_jk(X, Kcon, freq::Float64, bhspin)
+
+
+function Bnu_inv(nu, θe)
+    x = HPL * nu / (ME * CL * CL * θe)
+
+    if (x < 2.e-3) # Taylor expand
+        return ((2. * HPL / (CL * CL))
+            / (x / 24. * (24. + x * (12. + x * (4. + x)))))
+    else
+        return ((2. * HPL / (CL * CL)) / (exp(x) - 1.))
+    end
+end
+
+function jar_calc(data, X, Kcon, bhspin)
+    Ne = get_model_ne(X, data)
+    if(Ne == 0.0)
+        return (0.0, 0.0)
+    end
+
+    Ucon::MVec4 = MVec4(undef)
+    Ucov::MVec4 = MVec4(undef)
+    Bcon::MVec4 = MVec4(undef)
+    Bcov::MVec4 = MVec4(undef)
+    get_model_fourv(data, X, Kcon, Ucon, Ucov, Bcon, Bcov, bhspin)
+    nu = get_fluid_nu(Kcon, Ucov)
+    nusq = nu * nu
+    θ = get_bk_angle(Kcon, Ucov, Bcon, Bcov)
+    b = get_model_b(X, data)
+    
+    θe =  get_model_thetae(X, data)
+
+    if(θ <= 0.0 || θ >= π)
+        return (0, 0);
+    end
+
+    j = maxwell_juettner_I(b, θ, θe, nu, Ne) 
+    Bnuinv = Bnu_inv(nu, θe)
+    k = 0.0
+    if(Bnuinv > 0)
+        k = j/Bnuinv
+    end
+
+    return (j, k)
+
+end
+
+
+function get_jk(X, Kcon, freq::Float64, bhspin, data)
 
     if MODEL == "analytic"
         return get_analytic_jk(X, Kcon, freq, bhspin)
     elseif MODEL == "thin_disk"
         return (zero(eltype(X)), zero(eltype(X)))
+    elseif MODEL == "iharm"
+        if(data === nothing)
+            error("Data must be provided for iharm model")
+        end
+        return jar_calc(data, X, Kcon, bhspin)
     else
         error("Unknown model: $MODEL")
     end
 end
 
 
-function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Float64}, I::Int, J::Int, freq::Float64, bhspin::Float64)
+function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Float64}, I::Int, J::Int, freq::Float64, bhspin::Float64, data = nothing)
     """
     Integrates the emission along the geodesic trajectory.
     
@@ -44,7 +96,7 @@ function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Fl
             Kconi[k] = traj[nsteps].Kcon[k]
     end
 
-    ji, ki = get_jk(Xi, Kconi, freq, bhspin)
+    ji, ki = get_jk(Xi, Kconi, freq, bhspin, data)
 
 
     Intensity = 0.0
@@ -68,7 +120,7 @@ function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Fl
         end
 
 
-        jf, kf = get_jk(Xf, Kconf, freq, bhspin)
+        jf, kf = get_jk(Xf, Kconf, freq, bhspin, data)
         Intensity::Float64 = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)
 
         if (isnan(Intensity) || isinf(Intensity))
@@ -155,3 +207,4 @@ function approximate_solve(Ii, ji, ki, jf, kf, dl)
 
     return If
 end
+

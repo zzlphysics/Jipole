@@ -73,7 +73,7 @@ end
 
 function RadTransferDiff(Xi, Kconi, freq, Ii, bhspin)
     # Check this later on
-    ji, ki = get_jk(Xi, Kconi, freq, bhspin)
+    ji, ki = get_jk(Xi, Kconi, freq, bhspin, nothing)
     return ji - ki * Ii
 end
 
@@ -242,7 +242,7 @@ function AutoDiffGeoTrajEulerMethod!(traj, dI_dθo_out::Base.RefValue{Float64}, 
         Kconi[k] = traj[step].Kcon[k]
     end
 
-    ji, ki = get_jk(Xi, Kconi, freq, bhspin)
+    ji, ki = get_jk(Xi, Kconi, freq, bhspin, nothing)
 
 
     # Then replace your ForwardDiff calls in the loop with:
@@ -280,7 +280,7 @@ function AutoDiffGeoTrajEulerMethod!(traj, dI_dθo_out::Base.RefValue{Float64}, 
         dI_dθo = dI_dθo + (traj[nstep - 1].dl) * (dot(jac_I_X, traj[nstep].dX_dθo) + dot(jac_I_K, traj[nstep].dK_dθo) + jac_I_I * dI_dθo)
         dI_da = dI_da + (traj[nstep].dl) * (dot(jac_I_X, traj[nstep].dX_da) + dot(jac_I_K, traj[nstep].dK_da) + jac_I_I * dI_da + jac_I_A)
 
-        jf, kf = get_jk(Xf, Kconf, freq, bhspin)
+        jf, kf = get_jk(Xf, Kconf, freq, bhspin, nothing)
         Intensity = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)
         if (isnan(Intensity) || isinf(Intensity))
             @error "NaN or Inf encountered in intensity calculation at pixel ($i, $j)"
