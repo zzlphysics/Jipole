@@ -32,6 +32,7 @@ mutable struct OfTraj
     dX_da::MVec4
     dK_da::MVec4
 end
+
 include("constants.jl")
 include("set_globals.jl")
 include("camera.jl")
@@ -41,154 +42,15 @@ include("coords.jl")
 include("tetrads.jl")
 include("utils.jl")
 include("radiation.jl")
-#include("./models/$(MODEL).jl")
 
 ##MODELS
+include("maxwell_juettner.jl")
+include("grid.jl")
 include("./models/$(MODEL).jl")
-#1) iharm
-using .iharm
-#include("/home/raia/Jipole/src/models/iharm.jl")
-
 
 include("geodesics.jl")
 include("autodiff.jl")
 include("gradientdescent.jl")
-
-
-# function calcKcon(sr::Bool, sθ::Bool, r::Float64, θ::Float64, ϕ::Float64, metric::Kerr, η::Float64, λ::Float64, nstep::Int)
-#     """
-#     Calculates the covariant 4-velocity of the photon for each point in the geodesics in internal coordinates.
-    
-#     Observations:
-#     - We follow the equation 9 of Gelles et al. 2021 https://arxiv.org/pdf/2105.09440
-#     - The function Krang.p_bl_d returns the wavevector in BL coordinates, so we transform for the native coordinates.
-#     """
-#     X = MVec4(0, log(r), θ/π, ϕ)
-#     Kcovbl = Krang.p_bl_d(metric, r, θ, η, λ, sr, sθ) 
-#     Kcovbl *= HPL * 230e9/(ME * CL * CL)
-
-#     #Transform Kcov to Kcon
-#     bl_gcov = gcov_bl(r, θ)
-#     bl_gcon = gcon_func(bl_gcov)
-#     KconBL = flip_index(MVec4(Kcovbl), bl_gcon)
-
-#     #Transform from BL to KS coordinates
-#     KconKS = bl_to_ks(X, KconBL)
-
-#     #Now convert to Native Coordinates
-#     KconNC = vec_from_ks(X, KconKS)
-#     return KconNC
-# end
-
-
-
-# function calculate_intensity_krang(scale_factor_ipole::Float64, rad_fovx::Float64, rad_fovy::Float64, camera_position::MVec4, pixels_x, pixels_y, freq_cgs)
-#     Image =  zeros(Float64, pixels_x, pixels_y)
-#     radialcam = camera_position[2]
-#     θcam = camera_position[3]
-#     metric = Krang.Kerr(a);
-#     θo = θcam * π / 180;
-#     dα = (αmax - αmin) / (pixels_x)
-#     dβ = (βmax - βmin) / (pixels_y)
-#     #scale_factor = dα * dβ * L_unit^2 / (Dsource * Dsource) / JY
-#     scale_factor = scale_factor_ipole
-#     res = pixels_x
-#     println("Using krang for geodesics calculations, this may take a while...")
-
-#     camera = Krang.IntensityCamera(metric, θo, radialcam, -rad_fovx, rad_fovx, -rad_fovy, rad_fovy, res);
-#     #camera = Krang.IntensityCamera(metric, θo, αmin, αmax, βmin, βmax, res);
-#     lines = Krang.generate_ray.(camera.screen.pixels, krang_points)
-
-
-#     for idx in eachindex(lines)
-#         Intensity= 0.0
-#         I = div(idx - 1, res) + 1
-#         J = mod(idx - 1, res) + 1
-#         if J == 1
-#             println("Processing row $I out of $(res)")
-#         end
-#         line = lines[idx]
-#         nstep = length(line)
-
-#         t = [pt.ts for pt in line]
-#         r = [pt.rs for pt in line]
-#         th = [pt.θs for pt in line]
-#         phi = [pt.ϕs for pt in line]
-#         #These are BL, I have to convert to KS coordinates
-#         KrangconKS = [bl_to_ks(MVec4(0, log(r[k]), th[k]/π, 0), MVec4(t[k], r[k], th[k], phi[k])) for k in 1:nstep if r[k] >= Rh]
-#         #record which index is maximum valid and save as last_valid_index
-#         last_valid_index = findlast(k -> k >= Rh, r)
-
-#         KrangNC = [vec_from_ks(MVec4(0, log(r[k]), th[k]/π, 0), KrangconKS[k]) for k in 1:last_valid_index]
-
-
-#         #check if any r is inf or nan, in case it is, print the r array index where it happens
-#         if any(isnan.(r)) || any(isinf.(r))
-#             @error "NaN or Inf encountered in r at pixel ($I, $J)"
-#             for k in eachindex(r)
-#                 if isnan(r[k]) || isinf(r[k])
-#                     @error "NaN or Inf encountered in r at index $k: r[$k] = $(r[k])"
-#                 end
-#             end
-#             error("NaN or Inf encountered in r")
-#         end
-
-#         sr = [pt.νr for pt in line]      
-#         sθ = [pt.νθ for pt in line]
-#         Kcon = zeros(Float64, nstep, NDIM)
-#         dl = zeros(Float64, nstep)
-
-#         η = Krang.η(camera.screen.pixels[idx])
-#         λ = Krang.λ(camera.screen.pixels[idx])
-
-#         for k in 1:last_valid_index
-#             if(KrangconKS[k][2] == 0)
-#                 break
-#             end
-#             if (KrangconKS[k][2] < (Rh + 0.5 ))
-#                 r[k] = 0.0
-#                 break
-#             end
-#             Kcon[k, :] = calcKcon(sr[k], sθ[k], r[k], th[k], phi[k], metric, η, λ, k)
-#         end
-
-#         for k in 1:last_valid_index-1
-#             dl[k] = sqrt(sum((KrangNC[k+1][i] - KrangNC[k][i])^2 for i in 1:4))
-#         end
-
-        
-
-#         traj = [OfTraj(dl[k], MVec4(KrangNC[k][1], KrangNC[k][2], KrangNC[k][3], KrangNC[k][4]),
-#                             MVec4(Kcon[k,1], Kcon[k,2], Kcon[k,3], Kcon[k,4]),
-#                             MVec4(undef), MVec4(undef)) for k in 1:last_valid_index]
-#         integrate_emission!(traj, last_valid_index, Image, I, J)
-#     end
-
-
-#     Ftot::Float64 = 0.0
-#     Iavg::Float64 = 0.0
-#     Imax::Float64 = 0.0
-#     imax::Int = 0
-#     jmax::Int = 0
-#     println("Image processing complete. Calculating total flux and averages...")
-#     for i in 1:pixels_x
-#         for j in 1:pixels_y
-#             Ftot += Image[i, j] * freq_cgs^3 * scale_factor
-#             Iavg += Image[i, j]
-#             if (Image[i,j] * freq_cgs^3) > Imax
-#                 imax = i
-#                 jmax = j
-#                 Imax = Image[i, j] * freq_cgs^3
-#             end
-#         end
-#     end
-#     Iavg *= freq_cgs^3/ (pixels_x * pixels_y)
-#     @printf("Scale = %.15e\n", scale_factor)
-#     println("imax = $imax, jmax = $jmax, Imax = $Imax, Iavg = $Iavg")
-#     println("Using freq_cgs = $freq_cgs, Ftot = $(Ftot)")
-#     println("nuLnu = $(Ftot * Dsource * Dsource * JY * freq_cgs * 4.0 * π)")
-#     return Image* freq_cgs^3 * scale_factor
-# end
 
 
 

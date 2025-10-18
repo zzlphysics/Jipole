@@ -154,7 +154,6 @@ function set_dxdX(X)
     """
     T = eltype(X)
     dxdX = TMMat4{T}(undef)
-    hslope = 1.0   
     for mu in 1:NDIM
         for nu in 1:NDIM
             if mu == nu
@@ -166,7 +165,12 @@ function set_dxdX(X)
     end
 
     dxdX[2,2] = exp(X[2])
-    dxdX[3,3] = π + (1 - hslope) * π * cos(2 * π * X[3])
+    if(MODEL == "analytic" || MODEL == "thin_disk")
+        dxdX[3,3] = π
+    else
+        dxdX[3, 2] = -exp(mks_smooth * (startx[2] - X[2])) * mks_smooth * (π/2 - π*X[3] +poly_norm * (2*X[3] - 1) * (1 + ((-1 + 2*X[3])/poly_xt)^poly_alpha / (1 + poly_alpha)) - 0.5 * (1 - hslope) * sin(2*π*X[3]))
+        dxdX[3, 3] = π + (1 - hslope) * π * cos(2*π*X[3]) +exp(mks_smooth * (startx[2] - X[2])) * (-π +2 * poly_norm * (1 + ((2*X[3]-1)/poly_xt)^poly_alpha / (poly_alpha + 1)) +(2 * poly_alpha * poly_norm * (2*X[3]-1) * ((2*X[3]-1)/poly_xt)^(poly_alpha-1)) / ((1 + poly_alpha) * poly_xt) -(1 - hslope) * π * cos(2*π*X[3]))
+    end
     if(dxdX[3,3] <= 0.0)
         println("Warning! dxdX[3,3] is non-positive: ", dxdX[3,3])
         println("X[3] = ", X[3])
@@ -174,6 +178,28 @@ function set_dxdX(X)
     end
 
     return dxdX
+end
+
+function gcov_ks(r, th, bhspin, gcov)
+    cth = cos(th)
+    sth = sin(th)
+
+    s2 = sth * sth
+    rho2 = r * r + bhspin * bhspin * cth * cth
+
+    gcov[1,1] = -1. + 2. * r/rho2
+    gcov[1,2] = 2. * r/rho2
+    gcov[1,4] = -2. * bhspin * r * s2 / rho2
+
+    gcov[2,1] = gcov[1,2]
+    gcov[2,2] = 1. + 2. * r/rho2
+    gcov[2,4] = -bhspin * s2 * (1. + 2. * r/rho2)
+
+    gcov[3,3] = rho2
+
+    gcov[4,1] = gcov[1,4]
+    gcov[4,2] = gcov[2,4]
+    gcov[4,4] = s2 * (rho2 + bhspin * bhspin * s2 * (1. + 2. * r/rho2))
 end
 
 function set_dXdx(X)
@@ -221,7 +247,15 @@ function bl_coord(X, R0::Float64 = 0.0)
     @X: Vector of position coordinates in internal coordinates coordinates.
     """
     r = exp(X[2]) + R0;
-    th = π *X[3]
+
+    if(MODEL == "analytic" || MODEL == "thin_disk")
+        th = π *X[3]
+    else
+        thG = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
+        y = 2 * X[3] - 1.;
+        thJ = poly_norm * y* (1. + ((y / poly_xt)^poly_alpha) / (poly_alpha + 1.)) + 0.5 * π;
+        th = thG + exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG); 
+    end
     return r, th
 end
 

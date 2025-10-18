@@ -65,6 +65,58 @@ function gcov_func!(X, bhspin, gcov,R0::Float64 = 0.0)
     end
 end
 
+# function gcov_func(X, bhspin, R0::Float64 = 0.0)
+#     """
+#     Returns covariant metric tensor in Kerr-Schild coordinates.
+
+#     Parameters:
+#     @X: Vector of position coordinates in internal coordinates.
+#     """
+#     r, th = bl_coord(X)
+#     T = promote_type(typeof(r), typeof(th), typeof(bhspin))
+#     gcov = @MMatrix zeros(T, 4, 4)
+#     cth = cos(th)
+#     sth = abs(sin(th))
+
+#     s2 = sth * sth
+#     rho2 = r * r + bhspin * bhspin * cth * cth
+
+#     tfac = 1.
+#     rfac = r - R0
+#     hfac = π
+#     pfac = 1.
+#     gcov[1, 1] = (-1. + 2. * r / rho2) * tfac * tfac
+#     gcov[1, 2] = (2. * r / rho2) * tfac * rfac
+#     gcov[1, 4] = (-2. * bhspin * r * s2 / rho2) * tfac * pfac
+
+#     gcov[2, 1] = gcov[1, 2]
+#     gcov[2, 2] = (1. + 2. * r / rho2) * rfac * rfac
+#     gcov[2, 4] = (-bhspin * s2 * (1. + 2. * r / rho2)) * rfac * pfac
+    
+#     gcov[3, 3] = rho2 * hfac * hfac
+    
+#     gcov[4, 1] = gcov[1, 4]
+#     gcov[4, 2] = gcov[2, 4]
+#     gcov[4, 4] =
+#         s2 * (rho2 + bhspin * bhspin * s2 * (1. + 2. * r / rho2)) * pfac * pfac
+
+
+
+#     # Assert if the diagonal elements are zero
+#     if gcov[1, 1] == 0 || gcov[2, 2] == 0 || gcov[3, 3] == 0 || gcov[4, 4] == 0
+#         @error "Singular gcov encountered in gcov_func"
+#         println("sth $sth, cth $cth, r $r, a $bhspin, rho2 $rho2, tfac $tfac, rfac $rfac, hfac $hfac, pfac $pfac")
+#         println("X = $X")
+#         println("th = $th")
+#         print_matrix("gcov", gcov)
+#         error("Singular gcov encountered, cannot compute gcov_func.")
+#     end
+    
+#         return gcov
+# end
+
+
+
 function gcov_func(X, bhspin, R0::Float64 = 0.0)
     """
     Returns covariant metric tensor in Kerr-Schild coordinates.
@@ -75,44 +127,22 @@ function gcov_func(X, bhspin, R0::Float64 = 0.0)
     r, th = bl_coord(X)
     T = promote_type(typeof(r), typeof(th), typeof(bhspin))
     gcov = @MMatrix zeros(T, 4, 4)
-    cth = cos(th)
-    sth = abs(sin(th))
-
-    s2 = sth * sth
-    rho2 = r * r + bhspin * bhspin * cth * cth
-
-    tfac = 1.
-    rfac = r - R0
-    hfac = π
-    pfac = 1.
-    gcov[1, 1] = (-1. + 2. * r / rho2) * tfac * tfac
-    gcov[1, 2] = (2. * r / rho2) * tfac * rfac
-    gcov[1, 4] = (-2. * bhspin * r * s2 / rho2) * tfac * pfac
-
-    gcov[2, 1] = gcov[1, 2]
-    gcov[2, 2] = (1. + 2. * r / rho2) * rfac * rfac
-    gcov[2, 4] = (-bhspin * s2 * (1. + 2. * r / rho2)) * rfac * pfac
-    
-    gcov[3, 3] = rho2 * hfac * hfac
-    
-    gcov[4, 1] = gcov[1, 4]
-    gcov[4, 2] = gcov[2, 4]
-    gcov[4, 4] =
-        s2 * (rho2 + bhspin * bhspin * s2 * (1. + 2. * r / rho2)) * pfac * pfac
+    Gcov_ks = @MMatrix zeros(T, 4, 4)
+    gcov_ks(r, th, bhspin, Gcov_ks)
 
 
 
-    # Assert if the diagonal elements are zero
-    if gcov[1, 1] == 0 || gcov[2, 2] == 0 || gcov[3, 3] == 0 || gcov[4, 4] == 0
-        @error "Singular gcov encountered in gcov_func"
-        println("sth $sth, cth $cth, r $r, a $bhspin, rho2 $rho2, tfac $tfac, rfac $rfac, hfac $hfac, pfac $pfac")
-        println("X = $X")
-        println("th = $th")
-        print_matrix("gcov", gcov)
-        error("Singular gcov encountered, cannot compute gcov_func.")
-end
-    
-        return gcov
+    dxdX = set_dxdX(X)
+    for μ in 1:NDIM
+        for ν in 1:NDIM
+            for λ in 1:NDIM
+                for κ in 1:NDIM
+                    gcov[μ, ν] +=  Gcov_ks[λ, κ] * dxdX[λ, μ] * dxdX[κ, ν] 
+                end
+            end
+        end
+    end
+    return gcov
 end
 
 function gcon_func!(gcov, gcon)
