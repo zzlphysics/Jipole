@@ -22,8 +22,9 @@ function Bnu_inv(nu, θe)
     end
 end
 
-function jar_calc(data, X, Kcon, bhspin)
-    Ne = get_model_ne(X, data)
+function jar_calc(data, X, Kcon, bhspin, print_var)
+    Ne = get_model_ne(X, data, print_var)
+
     if(Ne == 0.0)
         return (0.0, 0.0)
     end
@@ -32,19 +33,21 @@ function jar_calc(data, X, Kcon, bhspin)
     Ucov::MVec4 = MVec4(undef)
     Bcon::MVec4 = MVec4(undef)
     Bcov::MVec4 = MVec4(undef)
-    get_model_fourv(data, X, Kcon, Ucon, Ucov, Bcon, Bcov, bhspin)
+    get_model_fourv(data, X, Kcon, Ucon, Ucov, Bcon, Bcov, bhspin, print_var)
     nu = get_fluid_nu(Kcon, Ucov)
     nusq = nu * nu
     θ = get_bk_angle(Kcon, Ucov, Bcon, Bcov)
     b = get_model_b(X, data)
     
     θe =  get_model_thetae(X, data)
-
     if(θ <= 0.0 || θ >= π)
         return (0, 0);
     end
 
-    j = maxwell_juettner_I(b, θ, θe, nu, Ne) 
+    j = maxwell_juettner_I(b, θ, θe, nu, Ne) / nusq
+    if(print_var == 1)
+        println("j = $(maxwell_juettner_I(b, θ, θe, nu, Ne))")
+    end
     Bnuinv = Bnu_inv(nu, θe)
     k = 0.0
     if(Bnuinv > 0)
@@ -56,7 +59,7 @@ function jar_calc(data, X, Kcon, bhspin)
 end
 
 
-function get_jk(X, Kcon, freq::Float64, bhspin, data)
+function get_jk(X, Kcon, freq::Float64, bhspin, data, print = 0)
 
     if MODEL == "analytic"
         return get_analytic_jk(X, Kcon, freq, bhspin)
@@ -66,7 +69,7 @@ function get_jk(X, Kcon, freq::Float64, bhspin, data)
         if(data === nothing)
             error("Data must be provided for iharm model")
         end
-        return jar_calc(data, X, Kcon, bhspin)
+        return jar_calc(data, X, Kcon, bhspin, print)
     else
         error("Unknown model: $MODEL")
     end
@@ -96,8 +99,26 @@ function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Fl
             Kconi[k] = traj[nsteps].Kcon[k]
     end
 
-    ji, ki = get_jk(Xi, Kconi, freq, bhspin, data)
+    print = 0 
+    if(I == 1 && J == 1)
+        print = 1
+    end
 
+    ji, ki = get_jk(Xi, Kconi, freq, bhspin, data, print)
+    if(I == 1 && J == 1)
+        println("For Pixel 00, Initial ji = $ji, ki = $ki")
+        println("Xi = $Xi")
+        println("Kconi = $Kconi")
+        println("nstep = $nsteps")
+        # for i in 1:nsteps
+        #      println("traj[$i].X = $(traj[i].X)")
+        #      println("traj[$i].K = $(traj[i].Kcon)")
+        #      println("traj[$i].dl = $(traj[i].dl)")
+
+        # end
+
+        println("ji = $ji, ki = $ki")
+    end
 
     Intensity = 0.0
     for nstep = nsteps:-1:2

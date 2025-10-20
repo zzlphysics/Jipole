@@ -8,7 +8,7 @@ function theta_func(X)
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    _, th = bl_coord(X, r, th)
+    _, th = bl_coord(X)
     return th
 end
 

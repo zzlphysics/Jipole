@@ -1,21 +1,21 @@
-function Xtoijk_ghost!(X, del)
+function Xtoijk_ghost!(X, del, print_var = 0)
     phi = rem(X[4], cstopx[4])
     if(phi < 0.0)
         phi += cstopx[4]
     end
 
-    i = trunc(Int, ((X[2] - cstartx[2]) / dx[2]) - 0.5 + 1000) - 1000
-    j = trunc(Int, ((X[3] - cstartx[3]) / dx[3]) - 0.5 + 1000) - 1000
-    k = trunc(Int, ((phi - cstartx[4]) / dx[4]) - 0.5 + 1000) - 1000
+    i = trunc(Int, ((X[2] - startx[2]) / dx[2]) - 0.5 + 1000) - 1000
+    j = trunc(Int, ((X[3] - startx[3]) / dx[3]) - 0.5 + 1000) - 1000
+    k = trunc(Int, ((phi - startx[4]) / dx[4]) - 0.5 + 1000) - 1000
 
 
     i = clamp(i, 0, N1 - 2)
     j = clamp(j, 0, N2 - 2)
     k = clamp(k, 0, N3 - 2)
 
-    del[2] = (X[2] - ((i + 0.5) * dx[2] + cstartx[2])) / dx[2]
-    del[3] = (X[3] - ((j + 0.5) * dx[3] + cstartx[3])) / dx[3]
-    del[4] = (phi - ((k + 0.5) * dx[4] + cstartx[4])) / dx[4]
+    del[2] = (X[2] - ((i + 0.5) * dx[2] + startx[2])) / dx[2]
+    del[3] = (X[3] - ((j + 0.5) * dx[3] + startx[3])) / dx[3]
+    del[4] = (phi - ((k + 0.5) * dx[4] + startx[4])) / dx[4]
 
     del[2] = clamp(del[2], 0.0, 1.0)
     del[3] = clamp(del[3], 0.0, 1.0)
@@ -42,9 +42,9 @@ function ijktoX(i,j,k, X)
 end
 
 
-function interp_scalar(X, data)
+function interp_scalar(X, data, print_var = 0)
     del::MVec4 = [0.0, 0.0, 0.0, 0.0]
-    i,j,k = Xtoijk_ghost!(X, del)
+    i,j,k = Xtoijk_ghost!(X, del, print_var)
     ip1 = i + 1
     jp1 = j + 1
     kp1 = k + 1
@@ -67,10 +67,10 @@ function interp_scalar(X, data)
 end
 
 
-function interp_scalar_time(X, dataA, dataB, tfac)
-    vA = interp_scalar(X, dataA)
+function interp_scalar_time(X, dataA, dataB, tfac, print_var = 0)
+    vA = interp_scalar(X, dataA, print_var)
     if SLOW_LIGHT
-        vB = interp_scalar(X, dataB)
+        vB = interp_scalar(X, dataB, print_var)
         return (tfac) * vA + (1. -tfac) * vB
     end
     return vA
