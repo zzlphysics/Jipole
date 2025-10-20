@@ -261,13 +261,12 @@ function init_physical_quantities(data, n::Int64, rescale_factor::Float64)
                 bsq = data[n].b[i, j, k]/B_unit
                 bsq = bsq * bsq
                 sigma_m = bsq / (data[n].RHO[i, j, k])
-                beta_m = data[n].UU[i, j, k] * (gam - 1.) / (bsq)
+                beta_m = data[n].UU[i, j, k] * (gam - 1.) / (0.5 * bsq)
 
                 betasq = beta_m * beta_m/ beta_crit/beta_crit
                 trat = trat_large * betasq/(1. + betasq) + trat_small/(1. + betasq)
                 θe_unit = (MP/ME) * (game - 1.) * (gamp - 1.)/((game - 1.) * trat + (gamp - 1.) )
                 data[n].θe[i, j, k] = θe_unit * data[n].UU[i, j, k] / (data[n].RHO[i, j, k])
-
                 data[n].θe[i,j,k] = max(data[n].θe[i,j,k], 1.e-3)
                 data[n].sigma[i,j,k] = max(sigma_m, SMALL)
                 data[n].beta[i,j,k] = max(beta_m, SMALL)
@@ -306,7 +305,7 @@ end
 
 
 
-function get_model_ne(X, data)
+function get_model_ne(X, data, print_var = 0)
     if(X_in_domain(X) == 0)
         return 0.0
     end
@@ -323,7 +322,6 @@ function get_model_ne(X, data)
     nA = 1
     nB = 1
     tfac = 0.0 #TODO: when using slowlight, we should implement this
-    
     #it should be data[nA].sigma and data[nb].sigma, but since we don't have slowlight yet, we just use nA and nB as 0
     return interp_scalar_time(X, data[nA].ne, data[nB].ne, tfac) * sigma_smoothfac
 end
@@ -368,7 +366,7 @@ function get_model_b(X, data)
     return interp_scalar_time(X, data[nA].b, data[nB].b, tfac)
 end
 
-function get_model_fourv(data, X, Kcon, Ucon, Ucov, Bcon, Bcov, bhspin)
+function get_model_fourv(data, X, Kcon, Ucon, Ucov, Bcon, Bcov, bhspin, print_var = 0)
     gcov = gcov_func(X, bhspin)
     gcon = gcon_func(gcov)
 
@@ -417,10 +415,13 @@ function get_model_fourv(data, X, Kcon, Ucon, Ucov, Bcon, Bcov, bhspin)
     #Now set Bcon and get Bcov by lowering it
 
     Bcon1 = interp_scalar_time(X, data[nA].B1, data[nB].B1, tfac);
+    if(print_var == 1)
+        println("Bcon1 = $Bcon1")
+    end
     Bcon2 = interp_scalar_time(X, data[nA].B2, data[nB].B2, tfac);
     Bcon3 = interp_scalar_time(X, data[nA].B3, data[nB].B3, tfac);
 
-    Bcon[1] = (Ucon[2] * Bcon1 + Ucon[3] * Bcon2 + Ucon[4] * Bcon3)
+    Bcon[1] = (Ucov_local[2] * Bcon1 + Ucov_local[3] * Bcon2 + Ucov_local[4] * Bcon3)
     Bcon[2] = (Bcon1 + Ucon[2] * Bcon[1]) / Ucon[1]
     Bcon[3] = (Bcon2 + Ucon[3] * Bcon[1]) / Ucon[1]
     Bcon[4] = (Bcon3 + Ucon[4] * Bcon[1]) / Ucon[1]

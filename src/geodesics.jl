@@ -2,7 +2,7 @@
 export init_XK
 
 
-function init_XK!(X::AbstractVector{T}, Kcon::AbstractVector{T}, i::Int, j::Int, Xcam::AbstractVector{T}, nx::Int, ny::Int, fovx, fovy, bhspin) where T
+function init_XK!(X::AbstractVector{T}, Kcon::AbstractVector{T}, i::Int, j::Int, Xcam::AbstractVector{T}, nx::Int, ny::Int, fovx, fovy, bhspin, xoff = 0, yoff = 0) where T
     """
     Initializes a geodesic from the camera
 
@@ -20,20 +20,24 @@ function init_XK!(X::AbstractVector{T}, Kcon::AbstractVector{T}, i::Int, j::Int,
     Kcon_tetrad = MVector{4,T}(undef)
 
     _, Econ, Ecov = make_camera_tetrad(Xcam, bhspin)
-    dxoff::Float64 = (i + 0.5 - 0.01) / nx - 0.5
-    dyoff::Float64 = (j + 0.5) / ny - 0.5
+    dxoff::Float64 = (i + 0.5 + xoff - 0.01) / nx - 0.5
+    dyoff::Float64 = (j + 0.5 + yoff) / ny - 0.5
     Kcon_tetrad[1] = zero(T)
     Kcon_tetrad[2] = (dxoff * cos(zero(T)) - dyoff * sin(zero(T))) * fovx
     Kcon_tetrad[3] = (dxoff * sin(zero(T)) + dyoff * cos(zero(T))) * fovy
     Kcon_tetrad[4] = one(T)
 
     Kcon_tetrad = null_normalize(Kcon_tetrad, one(T))
+
     tetrad_to_coordinate!(Kcon, Econ, Kcon_tetrad)
+
     @inbounds for mu in 1:NDIM
         X[mu] = Xcam[mu]
     end
-    #@printf("For pixel (%d, %d) Xcam = [%g, %g, %g, %g]\n", i, j, Xcam[1], Xcam[2], Xcam[3], Xcam[4])
+
+    #@printf("For pixel (%d, %d) Xcam = [%.15e, %.15e, %.15e, %.15e]\n", i, j, Xcam[1], Xcam[2], Xcam[3], Xcam[4])
     #@printf("For pixel (%d, %d) Kcon = [%.15e, %.15e, %.15e, %.15e]\n", i,j, Kcon[1], Kcon[2], Kcon[3], Kcon[4])
+    #@printf("dxoff = %g, dyoff = %g\n", dxoff, dyoff)
 end
 
 
@@ -149,7 +153,7 @@ function KrangGeoTracing(bhspin::Float64, θo::Float64, ro::Float64, fovx::Float
     return lines_ks
 end
 
-function get_pixel(traj::Vector{OfTraj}, i::Int, j::Int, Xcam::MVec4, maxnstep, fovx::Float64, fovy::Float64, freq::Float64, nx::Int64,ny::Int64, bhspin::Float64, Rh::Float64, Rout::Float64, Rstop::Float64)
+function get_pixel(traj::Vector{OfTraj}, i::Int, j::Int, Xcam::MVec4, maxnstep, fovx::Float64, fovy::Float64, freq::Float64, nx::Int64,ny::Int64, bhspin::Float64, Rh::Float64, Rout::Float64, Rstop::Float64, xoff = 0, yoff = 0)
     """
     Evolves the geodesic for each pixel.
     Parameters:
@@ -164,8 +168,8 @@ function get_pixel(traj::Vector{OfTraj}, i::Int, j::Int, Xcam::MVec4, maxnstep, 
     X = MVec4(undef)
     Kcon = MVec4(undef)
 
-    init_XK!(X, Kcon, i, j, Xcam, nx,ny, fovx, fovy, bhspin)
-    
+    init_XK!(X, Kcon, i, j, Xcam, nx,ny, fovx, fovy, bhspin, xoff, yoff)
+
     for mu in 1:NDIM
         Kcon[mu] *= freq
     end
@@ -227,11 +231,16 @@ function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin
     r3 = r2 * r1
     r4 = r3 * r1
 
-    th = π * X[3]
-    dthdx2 = π
-    d2thdx22 = 0.0
-
-    dthdx22 = dthdx2 * dthdx2
+    if(MODEL == "analytic" || MODEL == "thin_disk")
+        th = π * X[3]
+        dthdx2 = π
+        d2thdx22 = 0.0
+        dthdx22 = dthdx2 * dthdx2
+    elseif(MODEL == "iharm")
+         error("NOT WORKING FOR IHARM")
+    else
+        error("Unknown model: $MODEL")
+    end
 
     sth = sin(th)
     cth = cos(th)
@@ -361,7 +370,14 @@ function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf
 
     dKcon::Float64 = 0.0
 
-    get_connection_analytic!(X, lconn, bhspin)
+    if(MODEL == "analytic" || MODEL == "thin_disk")
+        #Use analytic connection
+        get_connection_analytic!(X, lconn, bhspin)
+    elseif(MODEL == "iharm")
+        get_connection(X, bhspin, lconn)
+    else
+        error("Unknown model: $MODEL")
+    end 
 
     @inbounds for k in 1:NDIM
         @inbounds for i in 1:NDIM
@@ -374,8 +390,14 @@ function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf
         dKcon = 0.0
     end
         
-
-    get_connection_analytic!(Xhalf, lconn, bhspin)
+    if(MODEL == "analytic" || MODEL == "thin_disk")
+        #Use analytic connection
+        get_connection_analytic!(Xhalf, lconn, bhspin)
+    elseif(MODEL == "iharm")
+        get_connection(Xhalf, bhspin, lconn)
+    else
+        error("Unknown model: $MODEL")
+    end 
 
     dKcon = 0.0
 
@@ -392,20 +414,15 @@ function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf
 end
 
 const DEL = 1.e-7
-function get_connection(X::MVec4, bhspin::Float64)
+function get_connection(X::MVec4, bhspin::Float64, conn)
     """
     Returns the connection coefficients in Kerr-Schild coordinates using finite differences.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    conn = Tensor3D(undef)
     tmp = Tensor3D(undef)
     Xh = copy(X)
     Xl = copy(X)
-    gcon = MMat4(undef)
-    gcov = MMat4(undef)
-    gh = MMat4(undef)
-    gl = MMat4(undef)
 
     gcov = gcov_func(X, bhspin)
     gcon = gcon_func(gcov)
