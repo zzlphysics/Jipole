@@ -105,20 +105,6 @@ function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Fl
     end
 
     ji, ki = get_jk(Xi, Kconi, freq, bhspin, data, print)
-    if(I == 1 && J == 1)
-        println("For Pixel 00, Initial ji = $ji, ki = $ki")
-        println("Xi = $Xi")
-        println("Kconi = $Kconi")
-        println("nstep = $nsteps")
-        # for i in 1:nsteps
-        #      println("traj[$i].X = $(traj[i].X)")
-        #      println("traj[$i].K = $(traj[i].Kcon)")
-        #      println("traj[$i].dl = $(traj[i].dl)")
-
-        # end
-
-        println("ji = $ji, ki = $ki")
-    end
 
     Intensity = 0.0
     for nstep = nsteps:-1:2
@@ -142,6 +128,22 @@ function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Fl
 
 
         jf, kf = get_jk(Xf, Kconf, freq, bhspin, data)
+        if(I == 1 && J == 1 && jf != 0.0 && kf != 0.0)
+            println("Hey!")
+            println("For Pixel 00, Initial jf = $ji, kf = $ki")
+            println("Xi = $Xi")
+            println("Kconi = $Kconi")
+            println("nstep = $nsteps")
+            # for i in 1:nsteps
+            #      println("traj[$i].X = $(traj[i].X)")
+            #      println("traj[$i].K = $(traj[i].Kcon)")
+            #      println("traj[$i].dl = $(traj[i].dl)")
+
+            # end
+
+            println("ji = $ji, ki = $ki")
+            error()
+    end
         Intensity::Float64 = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)
 
         if (isnan(Intensity) || isinf(Intensity))
