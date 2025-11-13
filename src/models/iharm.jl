@@ -442,6 +442,6 @@ function radiating_region(X::MVec4, Rh::Float64)
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    r, _ = bl_coord(X)
-    return (r > (Rh + 0.0001) && r > 1. && r < 1000.0)
+    r, th = bl_coord(X)
+    return (r > (rmin_geo) && r < rmax_geo && th < (π - th_beg))
 end
