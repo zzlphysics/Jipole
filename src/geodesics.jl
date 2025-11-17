@@ -247,6 +247,14 @@ function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin
         dthdx2 = (1.0 - E) * dthG + E * dthJ
         d2thdx22 = (1.0 - E) * dthG2 + E * dthJ2
         dthdx22 = dthdx2 * dthdx2
+        
+        thG = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
+        thJ = poly_norm * y* (1. + ((y / poly_xt)^poly_alpha) / (poly_alpha + 1.)) + 0.5 * π;
+
+        dthdx1 = -mks_smooth * exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG);
+        d2thdx12 = mks_smooth^2 * exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG);
+        d2thdx1_2 = -2.0 * mks_smooth * exp(mks_smooth * (startx[2] - X[2])) * (dthJ - dthG);
+
     else
         error("Unknown model: $MODEL")
     end
@@ -477,7 +485,6 @@ function get_connection(X::MVec4, bhspin::Float64, conn)
             end
         end
     end
-
     return conn
 end
 
