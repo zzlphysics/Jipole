@@ -100,10 +100,6 @@ function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Fl
     end
 
     print = 0 
-    if(I == 1 && J == 1)
-        print = 1
-    end
-
     ji, ki = get_jk(Xi, Kconi, freq, bhspin, data, print)
 
     Intensity = 0.0
@@ -128,26 +124,8 @@ function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Fl
 
 
         jf, kf = get_jk(Xf, Kconf, freq, bhspin, data)
-        # if(I == 1 && J == 1 && jf != 0.0 && kf != 0.0)
-        #     println("Hey!")
-        #     println("For Pixel 00, Initial jf = $jf, kf = $kf")
-        #     println("Xi = $Xi")
-        #     println("Kconi = $Kconi")
-        #     println("nstep = $nstep out of $nsteps")
-        #     # for i in 1:nsteps
-        #     #      println("traj[$i].X = $(traj[i].X)")
-        #     #      println("traj[$i].K = $(traj[i].Kcon)")
-        #     #      println("traj[$i].dl = $(traj[i].dl)")
-
-        #     # end
-
-        #     println("ji = $ji, ki = $ki")
-        #     error()
-        # end
         Intensity::Float64 = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)
-        if(I == 1 && J == 1 && Intensity != 0.0)
-            println("At step $nstep, Intensity = $Intensity")
-        end
+
 
         if (isnan(Intensity) || isinf(Intensity))
             @error "NaN or Inf encountered in intensity calculation at pixel ($I, $J)"

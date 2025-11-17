@@ -230,6 +230,7 @@ function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin
     r2 = r1 * r1
     r3 = r2 * r1
     r4 = r3 * r1
+    r,th = bl_coord(X)
 
     if(MODEL == "analytic" || MODEL == "thin_disk")
         th = π * X[3]
@@ -237,7 +238,15 @@ function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin
         d2thdx22 = 0.0
         dthdx22 = dthdx2 * dthdx2
     elseif(MODEL == "iharm")
-         error("NOT WORKING FOR IHARM")
+        E = exp(mks_smooth * (startx[2] - X[2]))
+        dthG = π * (1.0 + (1.0 - hslope) * cos(2.0 * π * X[3]))
+        y = 2 * X[3] - 1.0
+        dthJ = 2 * poly_norm * (1 + (y/poly_xt)^poly_alpha)
+        dthG2 = -2 * π * π * (1.0 - hslope) * sin(2.0 * π * X[3])
+        dthJ2 = 4 * poly_norm * poly_alpha * (y/poly_xt)^(poly_alpha - 1) / poly_xt
+        dthdx2 = (1.0 - E) * dthG + E * dthJ
+        d2thdx22 = (1.0 - E) * dthG2 + E * dthJ2
+        dthdx22 = dthdx2 * dthdx2
     else
         error("Unknown model: $MODEL")
     end
@@ -375,6 +384,8 @@ function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf
         get_connection_analytic!(X, lconn, bhspin)
     elseif(MODEL == "iharm")
         get_connection(X, bhspin, lconn)
+        #get_connection_analytic!(X, lconn, bhspin)
+
     else
         error("Unknown model: $MODEL")
     end 
@@ -395,6 +406,8 @@ function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf
         get_connection_analytic!(Xhalf, lconn, bhspin)
     elseif(MODEL == "iharm")
         get_connection(Xhalf, bhspin, lconn)
+        #get_connection_analytic!(Xhalf, lconn, bhspin)
+
     else
         error("Unknown model: $MODEL")
     end 
