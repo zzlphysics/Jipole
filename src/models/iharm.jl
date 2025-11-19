@@ -58,49 +58,6 @@ function _read_single_primitive(file_handle, prim_name::String)
 end
 
 
-# --- Public Functions ---
-
-"""
-    load_data(filename::String) -> IharmData
-
-Loads data from an iharm3d HDF5 dump file.
-
-This function reads the primitive variables (`RHO`, `UU`, etc.) from the specified file,
-converts them to `Float64`, and stores them in an `IharmData` object.
-
-# Arguments
-- `filename::String`: The path to the HDF5 dump file.
-
-# Returns
-- An `IharmData` object containing the simulation data.
-
-# Throws
-- An error if the file is not found or if the 'prims' dataset is missing.
-"""
-# function load_data(filename::String)
-#     println("Loading data from '$filename' into 'iharm' module...")
-#     !isfile(filename) && error("File not found: $filename")
-
-#     primitives_data = Dict{String, Array{Float64, 3}}()
-#     h5open(filename, "r") do file
-#         for prim_name in VALID_PRIMS
-#             data_3d = _read_single_primitive(file, prim_name)
-#             if data_3d !== nothing
-#                 # Convert to Float64 to ensure precision
-#                 primitives_data[prim_name] = Float64.(data_3d)
-#             end
-#         end
-#     end
-
-#     if isempty(primitives_data)
-#         @warn "No primitives were loaded from file '$filename'."
-#     else
-#         dims = size(primitives_data[RHO])
-#         println("Data successfully loaded. Dimensions (N1, N2, N3): $dims")
-#     end
-#     return IharmData(primitives_data)
-# end
-
 function load_data(filename::String, Nfiles::Int = 1)
     println("Loading data from '$filename' into 'iharm' module...")
     !isfile(filename) && error("File not found: $filename")
@@ -126,7 +83,7 @@ function load_data(filename::String, Nfiles::Int = 1)
 
     h5open(filename, "r") do file
         for n in 1:Nfiles
-            for prim_name in VALID_PRIMS
+            Threads.@threads for prim_name in VALID_PRIMS
                 data_3d = _read_single_primitive(file, prim_name)
                 if data_3d !== nothing
                     data_3d = Float64.(data_3d)  # ensure Float64
@@ -134,6 +91,9 @@ function load_data(filename::String, Nfiles::Int = 1)
                     # Assign to the correct struct field
                     if prim_name == "RHO"
                         rho = data_3d
+                        if(size(rho,1) != N1 || size(rho,2) != N2 || size(rho,3) != N3)
+                            error("Data dimensions do not match expected grid size N1,N2,N3")
+                        end
                     elseif prim_name == "UU"
                         uu = data_3d
                     elseif prim_name == "U1"
@@ -155,8 +115,11 @@ function load_data(filename::String, Nfiles::Int = 1)
         end
     end
 
+    println("Primitives successfully loaded. Dimensions: ", size(rho))
+    println("Calculating physical quantities...")
+
     for n in 1:Nfiles
-        for i in 1:(N1)
+        Threads.@threads for i in 1:(N1)
             for j in 1:(N2)
                 X::MVec4 = zeros(MVec4)
                 ijktoX(i-1, j-1, 0, X)
@@ -164,7 +127,6 @@ function load_data(filename::String, Nfiles::Int = 1)
                 gcon = gcon_func(gcov)
                 g = gdet_zone(i-1, j-1, 0)
 
-                r,th = bl_coord(X)
                 for k in 1:(N3)
                     ijktoX(i-1, j-1, k, X)
 
@@ -210,8 +172,6 @@ function load_data(filename::String, Nfiles::Int = 1)
         init_physical_quantities(data_array, n, rescale_factor)  # Initialize physical quantities for the first dataset
     end
 
-    println("data_array: $(data_array[1].b[1,1,1])")
-    println("B_unit: $B_unit")
     # Check if all fields were loaded
     fields = [rho, uu, u1, u2, u3, b1, b2, b3]
     if any(x -> x === nothing, fields)

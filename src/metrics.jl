@@ -84,16 +84,24 @@ function gcov_func(X, bhspin, R0::Float64 = 0.0)
     tfac = 1.
     rfac = r - R0
     if(MODEL == "iharm")
-        E = exp(mks_smooth * (startx[2] - X[2]))
-        dthG = π * (1.0 + (1.0 - hslope) * cos(2.0 * π * X[3]))
-        y = 2 * X[3] - 1.0
-        dthJ = 2 * poly_norm * (1 + (y/poly_xt)^poly_alpha)
-        dthG2 = -2 * π * π * (1.0 - hslope) * sin(2.0 * π * X[3])
-        dthJ2 = 4 * poly_norm * poly_alpha * (y/poly_xt)^(poly_alpha - 1) / poly_xt
-        hfac = (1.0 - E) * dthG + E * dthJ
-        thG = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
-        thJ = poly_norm * y* (1. + ((y / poly_xt)^poly_alpha) / (poly_alpha + 1.)) + 0.5 * π;
-        dth_dX2 = -mks_smooth * exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG)
+        if(METRIC == "MKS")
+            hfac = π * (1.0 + (1.0 - hslope) * cos(2.0 * π * X[3]))
+            dth_dX2 = 0.0
+        elseif(METRIC == "FMKS")
+            # FMKS metric
+            E = exp(mks_smooth * (startx[2] - X[2]))
+            dthG = π * (1.0 + (1.0 - hslope) * cos(2.0 * π * X[3]))
+            y = 2 * X[3] - 1.0
+            dthJ = 2 * poly_norm * (1 + (y/poly_xt)^poly_alpha)
+            dthG2 = -2 * π * π * (1.0 - hslope) * sin(2.0 * π * X[3])
+            dthJ2 = 4 * poly_norm * poly_alpha * (y/poly_xt)^(poly_alpha - 1) / poly_xt
+            hfac = (1.0 - E) * dthG + E * dthJ
+            thG = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
+            thJ = poly_norm * y* (1. + ((y / poly_xt)^poly_alpha) / (poly_alpha + 1.)) + 0.5 * π;
+            dth_dX2 = -mks_smooth * exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG)
+        else
+            error("Unknown METRIC type: $METRIC")
+        end
     elseif(MODEL == "analytic" || MODEL == "thin_disk")
         hfac = π
         dth_dX2 = 0.0
