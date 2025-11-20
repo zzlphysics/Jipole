@@ -8,10 +8,10 @@ const USE_GEODESIC_SIGMACUT = true
 
 metric_type = "METRIC_FMKS"
 if (metric_type == "METRIC_FMKS")
-    poly_xt = 0.82#TODO: prob have to be read from file
-    poly_alpha = 14.0#TODO: prob have to be read from file
-    mks_smooth = 0.5#TODO: prob have to be read from file
-    poly_norm = 0.5 * π * 1. /(1. + 1. /(poly_alpha + 1. )*1. /(poly_xt^poly_alpha));
+    const poly_xt = 0.82#TODO: prob have to be read from file
+    const poly_alpha = 14.0#TODO: prob have to be read from file
+    const mks_smooth = 0.5#TODO: prob have to be read from file
+    const poly_norm = 0.5 * π * 1. /(1. + 1. /(poly_alpha + 1. )*1. /(poly_xt^poly_alpha));
 end
 
 # --- Data Storage Structure ---
@@ -117,14 +117,15 @@ function load_data(filename::String, Nfiles::Int = 1)
 
     println("Primitives successfully loaded. Dimensions: ", size(rho))
     println("Calculating physical quantities...")
-
+    gcov::MMat4 = zeros(MMat4)
+    gcon::MMat4 = zeros(MMat4)
     for n in 1:Nfiles
         Threads.@threads for i in 1:(N1)
             for j in 1:(N2)
                 X::MVec4 = zeros(MVec4)
                 ijktoX(i-1, j-1, 0, X)
-                gcov = gcov_func(X, bhspin)
-                gcon = gcon_func(gcov)
+                gcov_func!(X, bhspin, gcov)
+                gcon_func!(gcov, gcon)
                 g = gdet_zone(i-1, j-1, 0)
 
                 for k in 1:(N3)
@@ -146,7 +147,8 @@ function load_data(filename::String, Nfiles::Int = 1)
                         ucon[μ + 1] = Ufields[μ][i,j,k] - ufac * gcon[1, μ+1]
                     end
                     
-                    ucov = flip_index(ucon, gcov)
+                    ucov::MVec4 = MVec4(undef)
+                    flip_index!(ucov, ucon, gcov)
                     udotB = 0.0
                     Bfields = (data_array[n].B1, data_array[n].B2, data_array[n].B3)
                     for l in 1:(NDIM -1)
@@ -158,7 +160,8 @@ function load_data(filename::String, Nfiles::Int = 1)
                     for μ in 1:(NDIM-1)
                         bcon[μ+1] = (Bfields[μ][i,j,k] + ucon[μ+1] * udotB) / ucon[1]
                     end
-                    bcov = flip_index(bcon, gcov)
+                    bcov = MVec4(undef)
+                    flip_index!(bcov, bcon, gcov)
 
                     bsq = 0.0
                     for l in 1:NDIM
@@ -184,52 +187,56 @@ function load_data(filename::String, Nfiles::Int = 1)
 end
 
 
-
-
-"""
-    view_slice(slice_data::AbstractArray)
-
-Displays a 1D or 2D slice of data in a formatted way in the terminal. Useful for
-quick inspection of simulation data.
-"""
-function view_slice(slice_data::AbstractArray)
-    if ndims(slice_data) > 2
-        println("The view_slice function only supports 1D or 2D arrays.")
-        return
-    end
-
-    println("\n" * "="^60)
-    println("Displaying slice with dimensions: ", size(slice_data))
-    println("="^60)
-    
-    # Base.showarray is the internal function Julia uses to display arrays nicely
-    Base.showarray(stdout, slice_data, false)
-    println()
-    println("="^60)
-end
-
-
 function init_physical_quantities(data, n::Int64, rescale_factor::Float64)
     println("Using mixed tp_over_te with trat_small = $(trat_small), trat_large = $(trat_large), and beta_crit = $(beta_crit)")
-    rescale_factor = sqrt(rescale_factor)
-    for i in 1:(N1)
-        for j in 1:(N2)
-            for k in 1:(N3)
-                data[n].ne[i, j, k] = data[n].RHO[i, j, k] * RHO_unit/(MP + ME) * Ne_factor
-                data[n].b[i,j,k] *= rescale_factor
-
-                bsq = data[n].b[i, j, k]/B_unit
-                bsq = bsq * bsq
-                sigma_m = bsq / (data[n].RHO[i, j, k])
-                beta_m = data[n].UU[i, j, k] * (gam - 1.) / (0.5 * bsq)
-
-                betasq = beta_m * beta_m/ beta_crit/beta_crit
-                trat = trat_large * betasq/(1. + betasq) + trat_small/(1. + betasq)
-                θe_unit = (MP/ME) * (game - 1.) * (gamp - 1.)/((game - 1.) * trat + (gamp - 1.) )
-                data[n].θe[i, j, k] = θe_unit * data[n].UU[i, j, k] / (data[n].RHO[i, j, k])
-                data[n].θe[i,j,k] = max(data[n].θe[i,j,k], 1.e-3)
-                data[n].sigma[i,j,k] = max(sigma_m, SMALL)
-                data[n].beta[i,j,k] = max(beta_m, SMALL)
+    
+    # Pre-compute constants
+    rescale_factor_sqrt = sqrt(rescale_factor)
+    rho_factor = RHO_unit / (MP + ME) * Ne_factor
+    gam_minus_1 = gam - 1.0
+    beta_crit_sq = beta_crit * beta_crit
+    θe_factor = (MP / ME) * (game - 1.0) * (gamp - 1.0)
+    game_minus_1 = game - 1.0
+    gamp_minus_1 = gamp - 1.0
+    B_unit_inv = 1.0 / B_unit
+    
+    # Get array references once (helps with type stability)
+    ne_arr = data[n].ne
+    b_arr = data[n].b
+    θe_arr = data[n].θe
+    sigma_arr = data[n].sigma
+    beta_arr = data[n].beta
+    RHO_arr = data[n].RHO
+    UU_arr = data[n].UU
+    
+    @inbounds Threads.@threads for i in 1:N1
+        for j in 1:N2
+            for k in 1:N3
+                rho_ijk = RHO_arr[i, j, k]
+                uu_ijk = UU_arr[i, j, k]
+                b_ijk = b_arr[i, j, k]
+                
+                ne_arr[i, j, k] = rho_ijk * rho_factor
+                
+                b_ijk *= rescale_factor_sqrt
+                b_arr[i, j, k] = b_ijk
+                
+                bsq_normalized = b_ijk * B_unit_inv
+                bsq = bsq_normalized * bsq_normalized
+                
+                sigma_m = bsq / rho_ijk
+                beta_m = uu_ijk * gam_minus_1 / (0.5 * bsq)
+                
+                betasq = beta_m * beta_m / beta_crit_sq
+                betasq_plus_1_inv = 1.0 / (1.0 + betasq)
+                trat = trat_large * betasq * betasq_plus_1_inv + trat_small * betasq_plus_1_inv
+                
+                θe_unit = θe_factor / (game_minus_1 * trat + gamp_minus_1)
+                θe_val = θe_unit * uu_ijk / rho_ijk
+                
+                θe_arr[i, j, k] = θe_val > 1.0e-3 ? θe_val : 1.0e-3
+                sigma_arr[i, j, k] = sigma_m > SMALL ? sigma_m : SMALL
+                beta_arr[i, j, k] = beta_m > SMALL ? beta_m : SMALL
             end
         end
     end
@@ -243,7 +250,6 @@ function get_model_sigma(X, data)
     nA = 1
     nB = 1
 
-    #it should be data[nA].sigma and data[nb].sigma, but since we don't have slowlight yet, we just use nA and nB as 0
     return interp_scalar_time(X, data[nA].sigma, data[nB].sigma, tfac)
 end
 
@@ -282,7 +288,6 @@ function get_model_ne(X, data, print_var = 0)
     nA = 1
     nB = 1
     tfac = 0.0 #TODO: when using slowlight, we should implement this
-    #it should be data[nA].sigma and data[nb].sigma, but since we don't have slowlight yet, we just use nA and nB as 0
     return interp_scalar_time(X, data[nA].ne, data[nB].ne, tfac) * sigma_smoothfac
 end
 

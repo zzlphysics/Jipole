@@ -271,6 +271,30 @@ function bl_coord(X, R0::Float64 = 0.0)
     return r, th
 end
 
+function bl_coord!(rt, X, R0::Float64 = 0.0)
+    """
+    Returns Boyer-Lindquist coordinates (r, th) from internal coordinates (X[2], X[3]).
+    Parameters:
+    @X: Vector of position coordinates in internal coordinates coordinates.
+    """
+    rt[1] = exp(X[2]) + R0;
+
+    if(MODEL == "analytic" || MODEL == "thin_disk")
+        rt[2] = π *X[3]
+    elseif(MODEL == "iharm")
+        if(METRIC == "FMKS")
+            thG = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
+            y = 2 * X[3] - 1.;
+            thJ = poly_norm * y* (1. + ((y / poly_xt)^poly_alpha) / (poly_alpha + 1.)) + 0.5 * π;
+            rt[2] = thG + exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG); 
+        elseif(METRIC == "MKS")
+            rt[2] = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
+        else
+            error("Unknown METRIC type: $METRIC")
+        end
+    end
+end
+
 function flip_index(vector, metric)
     """
     Returns the flipped index of a vector using the metric tensor.
@@ -286,4 +310,14 @@ function flip_index(vector, metric)
         end
     end
     return flipped_vector
+end
+
+@inline function flip_index!(flipped_vector::TMVec4, vector::TMVec4, metric::TMMat4)
+    @inbounds for ν in 1:NDIM
+        s = zero(eltype(vector))
+        for μ in 1:NDIM
+            s += metric[ν, μ] * vector[μ]
+        end
+        flipped_vector[ν] = s
+    end
 end

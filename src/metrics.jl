@@ -19,14 +19,19 @@ function gdet_func(gcov)
     return sqrt(abs(gdet))
 end
 
-function gcov_func!(X, bhspin, gcov,R0::Float64 = 0.0)
+
+
+function gcov_func!(X::MVec4, bhspin::Float64, gcov, R0::Float64 = 0.0)
     """
     Returns covariant metric tensor in Kerr-Schild coordinates.
 
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    r, th = bl_coord(X)
+    rt = MVector{2,Float64}(undef)
+    bl_coord!(rt, X)
+    r = rt[1]
+    th = rt[2]
     cth = cos(th)
     sth = abs(sin(th))
 
@@ -35,7 +40,29 @@ function gcov_func!(X, bhspin, gcov,R0::Float64 = 0.0)
 
     tfac = 1.
     rfac = r - R0
-    hfac = π
+    if(MODEL == "iharm")
+        if(METRIC == "MKS")
+            hfac = π * (1.0 + (1.0 - hslope) * cos(2.0 * π * X[3]))
+            dth_dX2 = 0.0
+        elseif(METRIC == "FMKS")
+            # FMKS metric
+            E = exp(mks_smooth * (startx[2] - X[2]))
+            dthG = π * (1.0 + (1.0 - hslope) * cos(2.0 * π * X[3]))
+            y = 2 * X[3] - 1.0
+            dthJ = 2 * poly_norm * (1 + (y/poly_xt)^poly_alpha)
+            dthG2 = -2 * π * π * (1.0 - hslope) * sin(2.0 * π * X[3])
+            dthJ2 = 4 * poly_norm * poly_alpha * (y/poly_xt)^(poly_alpha - 1) / poly_xt
+            hfac = (1.0 - E) * dthG + E * dthJ
+            thG = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
+            thJ = poly_norm * y* (1. + ((y / poly_xt)^poly_alpha) / (poly_alpha + 1.)) + 0.5 * π;
+            dth_dX2 = -mks_smooth * exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG)
+        else
+            error("Unknown METRIC type: $METRIC")
+        end
+    elseif(MODEL == "analytic" || MODEL == "thin_disk")
+        hfac = π
+        dth_dX2 = 0.0
+    end
     pfac = 1.
     gcov[1, 1] = (-1. + 2. * r / rho2) * tfac * tfac
     gcov[1, 2] = (2. * r / rho2) * tfac * rfac
@@ -43,8 +70,10 @@ function gcov_func!(X, bhspin, gcov,R0::Float64 = 0.0)
 
     gcov[2, 1] = gcov[1, 2]
     gcov[2, 2] = (1. + 2. * r / rho2) * rfac * rfac
+    gcov[2, 3] = rho2 * dth_dX2 * hfac
     gcov[2, 4] = (-bhspin * s2 * (1. + 2. * r / rho2)) * rfac * pfac
     
+    gcov[3,2] = gcov[2,3]
     gcov[3, 3] = rho2 * hfac * hfac
     
     gcov[4, 1] = gcov[1, 4]
