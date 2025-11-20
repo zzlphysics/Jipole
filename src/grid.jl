@@ -122,7 +122,10 @@ function gdet_zone(i,j,k)
             gcov[μ, ν] = 0.
         end
     end
-    r,th = bl_coord(X)
+    rt = MVector{2,Float64}(undef)
+    bl_coord!(rt, X)
+    r = rt[1]
+    th = rt[2]
     gcov_ks(r, th, bhspin, gcovKS)
     dxdX = set_dxdX(Xzone)
 
