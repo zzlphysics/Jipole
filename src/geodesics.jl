@@ -444,44 +444,52 @@ function get_connection(X::MVec4, bhspin::Float64, conn)
     tmp = Tensor3D(undef)
     Xh = copy(X)
     Xl = copy(X)
+    gcov::MMat4 = MMat4(undef)
+    gcon::MMat4 = MMat4(undef)
+    fill!(gcov, 0.0)
+    gcov_func!(X, bhspin, gcov)
+    gcon_func!(gcov, gcon)
 
-    gcov = gcov_func(X, bhspin)
-    gcon = gcon_func(gcov)
-
-    for k in 1:NDIM
+    gh::MMat4 = MMat4(undef)
+    gl::MMat4 = MMat4(undef)
+    
+    @inbounds for k in 1:NDIM
         Xh .= X
         Xl .= X
         Xh[k] += DEL
         Xl[k] -= DEL
 
-        gh = gcov_func(Xh, bhspin)
-        gl = gcov_func(Xl, bhspin)
+        fill!(gh, 0.0)
+        fill!(gl, 0.0)
+        gcov_func!(Xh, bhspin, gh)
+        gcov_func!(Xl, bhspin, gl)
 
 
 
-        for i in 1:NDIM
-            for j in 1:NDIM
+        @inbounds for i in 1:NDIM
+            @inbounds for j in 1:NDIM
                 conn[i, j, k] = (gh[i, j] - gl[i, j]) / (Xh[k] - Xl[k])
             end
         end
     end
 
 
-    for i in 1:NDIM
-        for j in 1:NDIM
-            for k in 1:NDIM
+    @inbounds for i in 1:NDIM
+        @inbounds for j in 1:NDIM
+            @inbounds for k in 1:NDIM
                 tmp[i, j, k] = 0.5 * (conn[j, i, k] + conn[k, i, j] - conn[k, j, i])
             end
         end
     end
 
-    for i in 1:NDIM
-        for j in 1:NDIM
-            for k in 1:NDIM
-                conn[i, j, k] = 0.0
+    @inbounds for i in 1:NDIM
+        @inbounds for j in 1:NDIM
+            @inbounds for k in 1:NDIM
+                s = 0.0 #s here reduces the amount of allocations
                 for l in 1:NDIM
-                    conn[i, j, k] += gcon[i, l] * tmp[l, j, k]
+                    s += gcon[i,l] * tmp[l,j,k]
                 end
+                conn[i,j,k] = s
             end
         end
     end

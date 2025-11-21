@@ -28,10 +28,7 @@ function gcov_func!(X::MVec4, bhspin::Float64, gcov, R0::Float64 = 0.0)
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    rt = MVector{2,Float64}(undef)
-    bl_coord!(rt, X)
-    r = rt[1]
-    th = rt[2]
+    r,th = bl_coord(X)
     cth = cos(th)
     sth = abs(sin(th))
 
