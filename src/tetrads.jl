@@ -27,19 +27,16 @@ function make_camera_tetrad(X, bhspin)
 
     trial= zero(MVec4)
     trial[1] = -1.0
+    Ucam::MVec4 = MVec4(undef)
+    flip_index!(Ucam, trial, Gcon)
 
-    Ucam = flip_index(trial, Gcon)
-    #@warn("Warning! Two different definitions of Ucam in make_camera_tetrad! One from ipole Ilinois repository and one from Monika's repository.")
-    # Ucam[1] = 1.0
-    # Ucam[2] = 0.0
-    # Ucam[3] = 0.0
-    # Ucam[4] = 0.0
 
     trial = zero(MVec4)
     trial[1] = 1.0
     trial[2] = 1.0
 
-    Kcon = flip_index(trial, Gcon)
+    Kcon::MVec4 = MVec4(undef)
+    flip_index!(Kcon, trial, Gcon)
     trial = zero(MVec4)
     trial[3] = 1.0
     sing::Int, Econ, Ecov = make_plasma_tetrad(Ucam, Kcon, trial, Gcov)
