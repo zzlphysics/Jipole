@@ -271,7 +271,7 @@ end
 
 
 
-function get_model_ne(X, data, print_var = 0)
+function get_model_ne(X, data)
     if(X_in_domain(X) == 0)
         return 0.0
     end
@@ -291,7 +291,7 @@ function get_model_ne(X, data, print_var = 0)
     return interp_scalar_time(X, data[nA].ne, data[nB].ne, tfac) * sigma_smoothfac
 end
 
-function set_tinterp_ns(X::MVec4)
+function set_tinterp_ns(X)
     """
     How far have we interpolated in time between two data points data[nA] and data[nB]
 
@@ -331,7 +331,7 @@ function get_model_b(X, data)
     return interp_scalar_time(X, data[nA].b, data[nB].b, tfac)
 end
 
-function get_model_fourv(data, X, Kcon, Ucon, Ucov, Bcon, Bcov, bhspin, print_var = 0)
+function get_model_fourv(data, X, Kcon, Ucon, Ucov, Bcon, Bcov, bhspin)
     gcov = gcov_func(X, bhspin)
     gcon = gcon_func(gcov)
 
@@ -355,7 +355,7 @@ function get_model_fourv(data, X, Kcon, Ucon, Ucov, Bcon, Bcov, bhspin, print_va
         end
         return
     end
-    Vcon = MVec4(undef)
+    Vcon = typeof(X)(undef)
     tfac, _, _ = set_tinterp_ns(X)
     nA = 1 #TODO: when using slowlight, we should implement this
     nB = 1 #TODO: when using slowlight, we should implement this
@@ -380,9 +380,6 @@ function get_model_fourv(data, X, Kcon, Ucon, Ucov, Bcon, Bcov, bhspin, print_va
     #Now set Bcon and get Bcov by lowering it
 
     Bcon1 = interp_scalar_time(X, data[nA].B1, data[nB].B1, tfac);
-    if(print_var == 1)
-        println("Bcon1 = $Bcon1")
-    end
     Bcon2 = interp_scalar_time(X, data[nA].B2, data[nB].B2, tfac);
     Bcon3 = interp_scalar_time(X, data[nA].B3, data[nB].B3, tfac);
 
