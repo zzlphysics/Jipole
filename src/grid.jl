@@ -1,4 +1,4 @@
-function Xtoijk_ghost!(X, del, print_var = 0)
+function Xtoijk_ghost!(X, del)
     # --- i (r) and j (theta) ---
     
     i_logical = trunc(Int, ((X[2] - startx[2]) / dx[2]) - 0.5 + 1000) - 1000
@@ -38,6 +38,8 @@ function Xtoijk_ghost!(X, del, print_var = 0)
     return i, j, k
 end
 
+
+
 function X_in_domain(X)
     if(X[2] < cstartx[2] || X[2] > cstopx[2] || X[3] < cstartx[3] || X[3] > cstopx[3])
         return 0
@@ -53,9 +55,11 @@ function ijktoX(i,j,k, X)
 end
 
 
-function interp_scalar(X, data, print_var = 0)
-    del::MVec4 = [0.0, 0.0, 0.0, 0.0]
-    i, j, k = Xtoijk_ghost!(X, del, print_var)
+function interp_scalar(X, data)
+    #del::MVec4 = [0.0, 0.0, 0.0, 0.0]
+    del = typeof(X)(0.0, 0.0, 0.0, 0.0)  # Same type as X
+
+    i, j, k = Xtoijk_ghost!(X, del)
 
     (N1_data, N2_data, N3_data) = size(data) # Get runtime size (e.g., 128, 64, 32)
 
@@ -93,10 +97,10 @@ function interp_scalar(X, data, print_var = 0)
 end
 
 
-function interp_scalar_time(X, dataA, dataB, tfac, print_var = 0)
-    vA = interp_scalar(X, dataA, print_var)
+function interp_scalar_time(X, dataA, dataB, tfac)
+    vA = interp_scalar(X, dataA)
     if SLOW_LIGHT
-        vB = interp_scalar(X, dataB, print_var)
+        vB = interp_scalar(X, dataB)
         return (tfac) * vA + (1. -tfac) * vB
     end
     return vA

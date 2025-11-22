@@ -4,37 +4,41 @@ using ForwardDiff: Dual
 # Add these helper structs and functions OUTSIDE your main function (at module level):
 
 # Create callable structs to avoid closure allocations
-struct RadTransferX{T1,T2,T3,T4}
+struct RadTransferX{T1,T2,T3,T4,T5}
     Kconi::T1
     freq::T2
     Intensity::T3
     bhspin::T4
+    data::T5
 end
-(f::RadTransferX)(x) = RadTransferDiff(x, f.Kconi, f.freq, f.Intensity, f.bhspin)
+(f::RadTransferX)(x) = RadTransferDiff(x, f.Kconi, f.freq, f.Intensity, f.bhspin, f.data)
 
-struct RadTransferK{T1,T2,T3,T4}  
+struct RadTransferK{T1,T2,T3,T4,T5}  
     Xi::T1
     freq::T2
     Intensity::T3
     bhspin::T4
+    data::T5
 end
-(f::RadTransferK)(k) = RadTransferDiff(f.Xi, k, f.freq, f.Intensity, f.bhspin)
+(f::RadTransferK)(k) = RadTransferDiff(f.Xi, k, f.freq, f.Intensity, f.bhspin, f.data)
 
-struct RadTransferA{T1,T2,T3,T4}
+struct RadTransferA{T1,T2,T3,T4,T5}
     Xi::T1
     Kconi::T2  
     freq::T3
     Intensity::T4
+    data::T5
 end
-(f::RadTransferA)(spin) = RadTransferDiff(f.Xi, f.Kconi, f.freq, f.Intensity, spin)
+(f::RadTransferA)(spin) = RadTransferDiff(f.Xi, f.Kconi, f.freq, f.Intensity, spin, f.data)
 
-struct RadTransferI{T1,T2,T3,T4}
+struct RadTransferI{T1,T2,T3,T4,T5}
     Xi::T1
     Kconi::T2
     freq::T3  
     bhspin::T4
+    data::T5
 end
-(f::RadTransferI)(intens) = RadTransferDiff(f.Xi, f.Kconi, f.freq, intens, f.bhspin)
+(f::RadTransferI)(intens) = RadTransferDiff(f.Xi, f.Kconi, f.freq, intens, f.bhspin, f.data)
 
 function Mom4ODE(X::AbstractVector, Kcon::AbstractVector, bhspin)
     T = eltype(Kcon)
@@ -71,13 +75,13 @@ end
 
 
 
-function RadTransferDiff(Xi, Kconi, freq, Ii, bhspin)
+function RadTransferDiff(Xi, Kconi, freq, Ii, bhspin, data)
     # Check this later on
-    ji, ki = get_jk(Xi, Kconi, freq, bhspin, nothing)
+    ji, ki = get_jk(Xi, Kconi, freq, bhspin, data)
     return ji - ki * Ii
 end
 
-function AutoDiffGeoTrajEulerMethod!(traj, dI_dθo_out::Base.RefValue{Float64}, intensity_out::Base.RefValue{Float64}, dI_da_out::Base.RefValue{Float64},ro::Float64, θo::Float64, bhspin::Float64, nx::Int64, ny::Int64, nmaxstep::Int64,i::Int64,j::Int64,freq::Float64, fovx::Float64, fovy::Float64, Rout::Float64, Rstop::Float64)
+function AutoDiffGeoTrajEulerMethod!(traj, dI_dθo_out::Base.RefValue{Float64}, intensity_out::Base.RefValue{Float64}, dI_da_out::Base.RefValue{Float64},ro::Float64, θo::Float64, bhspin::Float64, nx::Int64, ny::Int64, nmaxstep::Int64,i::Int64,j::Int64,freq::Float64, fovx::Float64, fovy::Float64, Rout::Float64, Rstop::Float64, data = nothing)
     """
     Returns the intensity and the derivative of the intensity with respect to θo for pixel (i,j) using autodiff.
 
@@ -124,26 +128,49 @@ function AutoDiffGeoTrajEulerMethod!(traj, dI_dθo_out::Base.RefValue{Float64}, 
     #The derivative of K is calculated using finite differences
     #Define reference for the intensity integration part so that I don't have to reallocate each step
     jac = MMatrix{4, 9, Float64}(undef)
-    dX_dθo = ForwardDiff.derivative(x -> camera_position(ro, x, 0.0, bhspin, Rout), θo)
-    #dX_dθo = MVec4(0.0,0.0, 1/π, 0.0)
-    dK_dθo = ForwardDiff.derivative(x -> CalculateK(ro, x, i, j, nx, ny, fovx, fovy, bhspin, freq, Rout), θo)
+    if(MODEL == "analytic" || MODEL == "thin_disk")
+        dX_dθo = ForwardDiff.derivative(x -> camera_position(ro, x, 0.0, bhspin, Rout), θo)
+        dK_dθo = ForwardDiff.derivative(x -> CalculateK(ro, x, i, j, nx, ny, fovx, fovy, bhspin, freq, Rout), θo)
+
+    elseif (MODEL == "iharm")
+        # Use finite differences for iharm model
+        # iharm model uses bisection method to find camera theta coordinate, which is not differentiable
+        # because of the if statements inside the root finding
+        # del = 1e-7
+        # θl = θo - del
+        # θh = θo + del
+        # Xl = camera_position(ro, θl, 0.0, bhspin, Rout)
+        # Xh = camera_position(ro, θh, 0.0, bhspin, Rout)
+        # dX_dθo = (Xh .- Xl) ./ (2.0 * del)
+        # Kl = CalculateK(ro, θl, i, j, nx, ny, fovx, fovy, bhspin, freq, Rout)
+        # Kh = CalculateK(ro, θh, i, j, nx, ny, fovx, fovy, bhspin, freq, Rout)
+        # dK_dθo = (Kh .- Kl) ./ (2.0 * del)
+        dX_dθo = ForwardDiff.derivative(x -> camera_position(ro, x, 0.0, bhspin, Rout), θo)
+        dK_dθo = ForwardDiff.derivative(x -> CalculateK(ro, x, i, j, nx, ny, fovx, fovy, bhspin, freq, Rout), θo)
+
+    end 
     dX_da = ForwardDiff.derivative(x -> camera_position(ro, θo, 0.0, x, Rout), bhspin)
     dK_da = ForwardDiff.derivative(x -> CalculateK(ro, θo, i, j, nx, ny, fovx, fovy, x, freq, Rout), bhspin)
 
     XK = MVector{9, Float64}(undef)
     XK[9] = bhspin
     #push first step to trajectory
-    push!(traj, OfTraj(
-        0,
-        copy(X),   
-        copy(Kcon),   
-        copy(Xhalf),   
-        copy(Kconhalf),
-        copy(dX_dθo),
-        copy(dK_dθo),
-        copy(dX_da),
-        copy(dK_da)
+
+    insert!(traj, 1, OfTraj(
+    0,
+    copy(X),
+    copy(Kcon),
+    copy(Xhalf),
+    copy(Kconhalf),
+    copy(dX_dθo),
+    copy(dK_dθo),
+    copy(dX_da),
+    copy(dK_da)
     ))
+
+
+    
+    #Check if it has been saved in traj.
     # Continue from the second step, since first step is defined at init_XK!
     step::Int64 = 1
 
@@ -203,7 +230,8 @@ function AutoDiffGeoTrajEulerMethod!(traj, dI_dθo_out::Base.RefValue{Float64}, 
             push_photon!(X, Kcon, -dl,Xhalf, Kconhalf, lconn, bhspin)
 
             step += 1
-            push!(traj, OfTraj(
+  
+            insert!(traj, step ,OfTraj(
                 copy(dl),
                 copy(X),   
                 copy(Kcon),   
@@ -242,7 +270,7 @@ function AutoDiffGeoTrajEulerMethod!(traj, dI_dθo_out::Base.RefValue{Float64}, 
         Kconi[k] = traj[step].Kcon[k]
     end
 
-    ji, ki = get_jk(Xi, Kconi, freq, bhspin, nothing)
+    ji, ki = get_jk(Xi, Kconi, freq, bhspin, data)
 
 
     # Then replace your ForwardDiff calls in the loop with:
@@ -266,10 +294,10 @@ function AutoDiffGeoTrajEulerMethod!(traj, dI_dθo_out::Base.RefValue{Float64}, 
         end
 
         # Update the callable structs with current values
-        rad_x = RadTransferX(Kconi, freq, Intensity, bhspin)
-        rad_k = RadTransferK(Xi, freq, Intensity, bhspin)
-        rad_a = RadTransferA(Xi, Kconi, freq, Intensity)
-        rad_i = RadTransferI(Xi, Kconi, freq, bhspin)
+        rad_x = RadTransferX(Kconi, freq, Intensity, bhspin, data)
+        rad_k = RadTransferK(Xi, freq, Intensity, bhspin, data)
+        rad_a = RadTransferA(Xi, Kconi, freq, Intensity, data)
+        rad_i = RadTransferI(Xi, Kconi, freq, bhspin, data)
 
         # Use the callable structs instead of closures
         ForwardDiff.gradient!(jac_I_X, rad_x, Xi)
@@ -277,10 +305,10 @@ function AutoDiffGeoTrajEulerMethod!(traj, dI_dθo_out::Base.RefValue{Float64}, 
         jac_I_A = ForwardDiff.derivative(rad_a, bhspin)
         jac_I_I = ForwardDiff.derivative(rad_i, Intensity)
 
-        dI_dθo = dI_dθo + (traj[nstep - 1].dl) * (dot(jac_I_X, traj[nstep].dX_dθo) + dot(jac_I_K, traj[nstep].dK_dθo) + jac_I_I * dI_dθo)
+        dI_dθo = dI_dθo + (traj[nstep].dl) * (dot(jac_I_X, traj[nstep].dX_dθo) + dot(jac_I_K, traj[nstep].dK_dθo) + jac_I_I * dI_dθo)
         dI_da = dI_da + (traj[nstep].dl) * (dot(jac_I_X, traj[nstep].dX_da) + dot(jac_I_K, traj[nstep].dK_da) + jac_I_I * dI_da + jac_I_A)
 
-        jf, kf = get_jk(Xf, Kconf, freq, bhspin, nothing)
+        jf, kf = get_jk(Xf, Kconf, freq, bhspin, data)
         Intensity = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)
         if (isnan(Intensity) || isinf(Intensity))
             @error "NaN or Inf encountered in intensity calculation at pixel ($i, $j)"

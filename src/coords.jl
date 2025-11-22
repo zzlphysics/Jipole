@@ -312,7 +312,7 @@ function flip_index(vector, metric)
     return flipped_vector
 end
 
-@inline function flip_index!(flipped_vector::TMVec4, vector::TMVec4, metric::TMMat4)
+@inline function flip_index!(flipped_vector, vector, metric)
     @inbounds for ν in 1:NDIM
         s = zero(eltype(vector))
         for μ in 1:NDIM
