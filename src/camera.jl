@@ -149,8 +149,8 @@ function camera_position(cam_dist::Float64, cam_theta_angle, cam_phi_angle::Floa
         x = [zero(T), T(cam_dist), T(cam_theta_angle)/T(180) * T(π), T(cam_phi_angle)/T(180) * T(π)]
         X[1] = 0.0
         X[2] = log(cam_dist)
-        X[3] = root_find(x, cstartx, cstopx)
-        #X[3] = root_find_newton(x, cstartx, cstopx)
+        #X[3] = root_find(x, cstartx, cstopx)
+        X[3] = root_find_newton(x, cstartx, cstopx)
         #X[3] = cam_theta_angle / 180
         X[4] = cam_phi_angle/180 * π
         return X
