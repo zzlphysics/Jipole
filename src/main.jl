@@ -68,7 +68,6 @@ function IpoleGeoIntensityIntegration(traj, freq_cgs::Float64, nx::Int,ny::Int, 
     """
     Image = zeros(Float64, nx, ny)
     Threads.@threads for i in 0:(nx - 1)
-        println("Processing row $i out of $(nx)")
         for j in 0:(ny - 1)
             integrate_emission!(traj[i+1, j+1], length(traj[i+1, j+1]), Image, i + 1, j + 1, freq_cgs, bhspin, data)
         end
@@ -98,7 +97,7 @@ function OutputStokesParameters(Image, freq_cgs, scale_factor, res, Dsource)
     Iavg *= 1.0/ (res * res)
     @printf("Scale = %.15e\n", scale_factor)
     println("imax = $imax, jmax = $jmax, Imax = $Imax, Iavg = $Iavg")
-    println("Using freq_cgs = $freq_cgs, Ftot = $Ftot")
+    @printf("Total Flux Fnu = %.15e Jy\n", Ftot)
     println("nuLnu = $(Ftot * Dsource * Dsource * JY * freq_cgs * 4.0 * π)")
 end
 
@@ -145,7 +144,4 @@ function main()
     end
 end
 
-
-#main()
-#GC.gc()
 

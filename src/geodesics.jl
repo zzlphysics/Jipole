@@ -198,14 +198,15 @@ function CalculateGeodesics(Xcam, fovx, fovy, freq_cgs, maxnstep, nx, ny, bhspin
     A matrix of geodesic trajectories for each pixel.
     """
     Rh = 1 + sqrt(1. - bhspin * bhspin);  # Radius of the horizon
-    println("Utilizing $(Threads.nthreads()) threads for geodesic calculation.")
+    #println("Utilizing $(Threads.nthreads()) threads for geodesic calculation.")
     trajs = Matrix{Vector{OfTraj}}(undef, nx, ny)
     freq_unitless = freq_cgs * HPL/(ME * CL * CL)  # Convert frequency to unitless
 
-    for i in 0:(nx - 1)
-        println("Processing row $i out of $(nx)")
 
-        Threads.@threads for j in 0:(ny - 1)
+
+    Threads.@threads for i in 0:(nx - 1)
+        tid = Threads.threadid()
+        for j in 0:(ny - 1)
             trajs[i+1, j+1] = Vector{OfTraj}()
             sizehint!(trajs[i+1, j+1], maxnstep)
             
@@ -587,9 +588,6 @@ function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, step_max:
         MVec4(undef),  #This is dX_da for the derivatives in autodiff
         MVec4(undef)  #This is dK_da for the derivatives in autodiff
     ))
-
-    cstartx = MVec4(0.0, log(Rh), 0.0, 0.0)
-    cstopx = MVec4(0.0, log(Rout), 1.0, 2.0 * π)
     nstep = 1
     lconn = Tensor3D(undef)
     while (stop_backward_integration(X, Kcon, Rh, Rstop) == 0) && (nstep < step_max)
@@ -614,7 +612,6 @@ function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, step_max:
         ))
     end
     nstep -= 1
-
 
 
     return nstep

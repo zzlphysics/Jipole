@@ -124,7 +124,14 @@ function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Fl
 
         jf, kf = get_jk(Xf, Kconf, freq, bhspin, data)
         Intensity::Float64 = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)
-
+        # if(I == 17 && J == 19 && Intensity > 0.0)
+        #     @printf("At step %d, Intensity: %.12e\n", nstep, Intensity * (230e9)^(3.));
+        #     @printf("tf.X = %.15e, %.15e, %.15e, %.15e/ tf.K = %.15e, %.15e, %.15e, %.15e\n", 
+        #             Xf[1], Xf[2], Xf[3], Xf[4],
+        #             Kconf[1], Kconf[2], Kconf[3], Kconf[4]);
+        #     @printf("kf = %.15e, jf = %.15e\n", kf, jf);
+        #     @printf("\n");
+        # end
 
         if (isnan(Intensity) || isinf(Intensity))
             @error "NaN or Inf encountered in intensity calculation at pixel ($I, $J)"

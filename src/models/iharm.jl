@@ -4,7 +4,7 @@ using Printf
 # --- Constants for Primitives ---
 const VALID_PRIMS = ["RHO", "UU", "U1", "U2", "U3", "B1", "B2", "B3"]
 const USE_GEODESIC_SIGMACUT = true
-const M_unit = 3e26
+const M_unit = 3.e26
 const RHO_unit = M_unit / L_unit^3  # Density unit in g/cm^3
 const U_unit = RHO_unit * CL^2  # Internal energy density unit in erg
 const B_unit = CL * sqrt(4 * π * RHO_unit)  # Magnetic field unit in Gauss
@@ -43,6 +43,7 @@ struct IharmData
     θe::Array{Float64,3}
     sigma::Array{Float64,3}
     beta::Array{Float64,3}
+    #dθedRhi::Array{Float64,3}
 end
 
 
@@ -211,6 +212,7 @@ function init_physical_quantities(data, n::Int64, rescale_factor::Float64)
     beta_arr = data[n].beta
     RHO_arr = data[n].RHO
     UU_arr = data[n].UU
+    #dθedRhi = data[n].dθedRhi
     
     @inbounds Threads.@threads for i in 1:N1
         for j in 1:N2
@@ -232,12 +234,16 @@ function init_physical_quantities(data, n::Int64, rescale_factor::Float64)
                 
                 betasq = beta_m * beta_m / beta_crit_sq
                 betasq_plus_1_inv = 1.0 / (1.0 + betasq)
-                trat = trat_large * betasq * betasq_plus_1_inv + trat_small * betasq_plus_1_inv
-                
+                trat = trat_large * betasq * betasq_plus_1_inv + trat_small * betasq_plus_1_inv                
                 θe_unit = θe_factor / (game_minus_1 * trat + gamp_minus_1)
                 θe_val = θe_unit * uu_ijk / rho_ijk
+
+                #dtratdRhi = betasq * betasq_plus_1_inv
+                #dθe_unit_dRhi = - θe_factor * game_minus_1/((game_minus_1 * trat + gamp_minus_1)^2) * dtratdRhi
+                #dθe_dRhi = dθe_unit_dRhi * uu_ijk / rho_ijk 
                 
                 θe_arr[i, j, k] = θe_val > 1.0e-3 ? θe_val : 1.0e-3
+                #dθedRhi[i,j,k] = dθe_dRhi
                 sigma_arr[i, j, k] = sigma_m > SMALL ? sigma_m : SMALL
                 beta_arr[i, j, k] = beta_m > SMALL ? beta_m : SMALL
             end

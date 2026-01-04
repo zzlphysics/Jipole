@@ -61,7 +61,7 @@ function interp_scalar(X, data)
 
     i, j, k = Xtoijk_ghost!(X, del)
 
-    (N1_data, N2_data, N3_data) = size(data) # Get runtime size (e.g., 128, 64, 32)
+    (N1_data, N2_data, N3_data) = size(data) 
 
     ip1 = i + 1
     jp1 = j + 1

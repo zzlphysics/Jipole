@@ -63,10 +63,20 @@ function FiniteDifferencesθ(ro, th, phi, DXsize, DYsize, pixels_x, pixels_y, So
     Imageh = IpoleGeoIntensityIntegration(trajectoryh, freq, pixels_x, pixels_y, scale_factor, bhspin, data)
     Imagel = IpoleGeoIntensityIntegration(trajectoryl, freq, pixels_x, pixels_y, scale_factor, bhspin, data)
 
+    #deallocate trajectories to save memory
+    trajectoryh = nothing
+    trajectoryl = nothing
     dI_dθo = (Imageh - Imagel) / (2 * h)  # Finite difference approximation
 
-    return dI_dθo, Imageh, Imagel
+    #calculate the image at the central value
+    Xcam = MVec4(camera_position(ro, th, phi, bhspin, Rout))
+    trajectory = CalculateGeodesics(Xcam, fovx, fovy, freq, maxnstep, pixels_x, pixels_y, bhspin, Rout, Rstop);
+    Imagec = IpoleGeoIntensityIntegration(trajectory, freq, pixels_x, pixels_y, scale_factor, bhspin, data);
+    trajectory = nothing
+    return dI_dθo, Imagec
 end
+
+
 
 function FiniteDifferences_a(ro, th, phi, DXsize, DYsize, pixels_x, pixels_y, SourceD, freq, maxnstep,h, bhspin, Rout, Rstop)
     """
@@ -88,18 +98,25 @@ function FiniteDifferences_a(ro, th, phi, DXsize, DYsize, pixels_x, pixels_y, So
     scale_factor = CalculateScaleFactor(DXsize, DYsize, pixels_x, pixels_y, SourceD, L_unit)
     # integrate_emission_flag setted to false signals that the output of the function will be the trajectory and not the Image
     trajectoryh = CalculateGeodesics(Xcamh, fovx, fovy, freq, maxnstep, pixels_x, pixels_y, ah, Rout, Rstop);
-    # for step in 1:length(trajectoryh[1,1])
-    #     println("Step $step: r = $(exp(trajectoryh[1,1][step].X[2])), th = $(trajectoryh[1,1][step].X[3]), phi = $(trajectoryh[1,1][step].X[4])")
-    # end
     trajectoryl = CalculateGeodesics(Xcaml, fovx, fovy, freq, maxnstep, pixels_x, pixels_y, al, Rout, Rstop);
     
     # Integrate the emission along the geodesics
     Imageh = IpoleGeoIntensityIntegration(trajectoryh, freq, pixels_x, pixels_y, scale_factor, ah)
     Imagel = IpoleGeoIntensityIntegration(trajectoryl, freq, pixels_x, pixels_y, scale_factor, al)
 
+    #deallocate trajectories to save memory
+    trajectoryh = nothing
+    trajectoryl = nothing
+
     dI_da = (Imageh - Imagel) / (2 * h)  # Finite difference approximation
 
-    return dI_da, Imageh, Imagel
+    #calculate the image at the central value
+    Xcam = MVec4(camera_position(ro, th, phi, bhspin, Rout))
+    trajectory = CalculateGeodesics(Xcam, fovx, fovy, freq, maxnstep, pixels_x, pixels_y, bhspin, Rout, Rstop);
+    Imagec = IpoleGeoIntensityIntegration(trajectory, freq, pixels_x, pixels_y, scale_factor, bhspin);
+    trajectory = nothing
+
+    return dI_da, Imagec
 end
 
 function armijo_line_search!(cost_func, compute_gradients!, x, grad, direction, bounds, 
@@ -580,7 +597,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
                                             fovx, fovy, Rout, Rstop, σ_pixels=0.0; 
                                             cost_tol=2e-11, param_tol=1e-8, grad_tol=1e-10,
                                             max_iterations=200, cg_restart_freq=20,
-                                            optimize_param::Symbol=:both, simulation_data = nothing)
+                                            optimize_param::Symbol=:both, simulation_data = nothing, sensemode = "AD")
     """
     True conjugate gradient optimization with proper scaling and convergence criteria
     
@@ -616,6 +633,10 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
     if !(optimize_param in [:both, :theta, :spin])
         throw(ArgumentError("optimize_param must be :both, :theta, or :spin"))
     end
+
+    if !(sensemode in ["AD", "FD"])
+        throw(ArgumentError("sensemode arg must be either 'AD' or 'FD'"))
+    end
     
     # Parameter scaling factors (normalize to similar ranges)
     θo_scale = 60.0
@@ -638,25 +659,35 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
     dI_da = Matrix{Float64}(undef, nx, ny)
     I_calc = Matrix{Float64}(undef, nx, ny)
     
-    function compute_cost_and_gradients(x_scaled_val, σ_pixels=0.0, simulation_data = nothing)
+    function compute_cost_and_gradients(x_scaled_val, σ_pixels=0.0, simulation_data = nothing, sensemode = "AD")
         # Convert back to physical parameters
         θo_val = x_scaled_val[1] * θo_scale
         a_val = x_scaled_val[2] * a_scale
         println("Running AutoDiffGeoTrajEulerMethod with θo = $θo_val, a = $a_val and applying σ_pixels = $σ_pixels filter")
         # Compute intensities and derivatives
-        Threads.@threads for i in 0:(nx-1)
-            for j in 0:(ny-1)
-                tid = Threads.threadid()
-                dI_dθo_out = Ref{Float64}()
-                intensity_out = Ref{Float64}()
-                dI_da_out = Ref{Float64}()
-                
-                AutoDiffGeoTrajEulerMethod_GRMHD!(thread_trajs[tid], dI_dθo_out, intensity_out, dI_da_out,
-                    ro, θo_val, phi, bhspin, nx, ny, nmaxstep, i, j, freq, fovx, fovy, Rout, Rstop, simulation_data)
-                I_calc[i+1, j+1] = intensity_out[]
-                dI_da[i+1, j+1] = dI_da_out[]
-                dI_dθo[i+1, j+1] = dI_dθo_out[]
+        if(sensemode == "AD")
+            Threads.@threads for i in 0:(nx-1)
+                for j in 0:(ny-1)
+                    tid = Threads.threadid()
+                    dI_dθo_out = Ref{Float64}()
+                    intensity_out = Ref{Float64}()
+                    dI_da_out = Ref{Float64}()
+                    
+                    AutoDiffGeoTrajEulerMethod_GRMHD!(thread_trajs[tid], dI_dθo_out, intensity_out, dI_da_out,
+                        ro, θo_val, phi, bhspin, nx, ny, nmaxstep, i, j, freq, fovx, fovy, Rout, Rstop, simulation_data)
+                    I_calc[i+1, j+1] = intensity_out[]
+                    dI_da[i+1, j+1] = dI_da_out[]
+                    dI_dθo[i+1, j+1] = dI_dθo_out[]
+                end
             end
+        elseif(sensemode == "FD")
+            println("Using Finite Differences to compute gradients")
+            dI_dθo, I_calc = FiniteDifferencesθ(ro, θo_val, phi, DXsize, DYsize, nx, ny, SourceD, freq, nmaxstep, 1e-4, a_val, Rout, Rstop, simulation_data)
+            if(optimize_spin)
+                dI_da, _ = FiniteDifferences_a(ro, θo_val, phi, DXsize, DYsize, nx, ny, SourceD, freq, nmaxstep, 1e-4, a_val, Rout, Rstop, simulation_data)
+            end
+        else
+            throw(ArgumentError("sensemode must be either 'AD' or 'FD'"))
         end
         I_calc = imfilter(I_calc, Kernel.gaussian(σ_pixels))
         dI_dθo = imfilter(dI_dθo, Kernel.gaussian(σ_pixels))
@@ -723,13 +754,13 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
     last_cost = nothing
     last_grad = nothing
 
-    function cached_compute_cost_and_gradients(x_scaled_val, σ_pixels=0.0, simulation_data = nothing)
+    function cached_compute_cost_and_gradients(x_scaled_val, σ_pixels=0.0, simulation_data = nothing, sensemode = "AD")
         if last_x_computed !== nothing && last_x_computed ≈ x_scaled_val
             println("Using cached computation for x = $x_scaled_val")
             return last_cost, last_grad
         end
         
-        cost, grad = compute_cost_and_gradients(x_scaled_val, σ_pixels, simulation_data)
+        cost, grad = compute_cost_and_gradients(x_scaled_val, σ_pixels, simulation_data, sensemode)
         last_x_computed = copy(x_scaled_val)
         last_cost = cost
         last_grad = copy(grad)
@@ -738,7 +769,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
     
 
     # Initial evaluation
-    cost, grad = cached_compute_cost_and_gradients(x_scaled, σ_pixels, simulation_data)
+    cost, grad = cached_compute_cost_and_gradients(x_scaled, σ_pixels, simulation_data, sensemode)
     initial_cost = cost
 
     if check_convergence(cost, grad, [cost], 0)
@@ -799,8 +830,8 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
         println("Cost before line search: $cost")
         cost_comparison = copy(cost)
         x_new, cost_new, step_size = constrained_armijo_line_search!(
-            (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels, simulation_data)[1],
-            (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels, simulation_data)[2],
+            (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels, simulation_data, sensemode)[1],
+            (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels, simulation_data, sensemode)[2],
             x_scaled, grad, direction, bounds_scaled,
             α=1e-5, β=0.5, initial_step=aggressive_initial_step, max_steps=15
         )
@@ -824,8 +855,8 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
             end
             
             x_new, cost_new, step_size = constrained_armijo_line_search!(
-                (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels, simulation_data)[1],
-                (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels, simulation_data)[2],
+                (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels, simulation_data, sensemode)[1],
+                (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels, simulation_data, sensemode)[2],
                 x_scaled, grad, direction, bounds_scaled,
                 α=1e-5, β=0.5, initial_step=0.01
             )
@@ -861,7 +892,9 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
         relative_param_change = param_change / max(norm(x_scaled), 1e-10)
         if relative_param_change < param_tol
             println("Relative parameter change too small ($relative_param_change), may have converged")
-            converged = true
+            println("However, we won't stop")
+
+            converged = false
         end
         if converged
             println("Converged! Final θo = $θo_phys, Final a = $a_phys")
@@ -869,7 +902,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
         end
         
         grad_old = copy(grad)
-        _, grad = cached_compute_cost_and_gradients(x_scaled, σ_pixels, simulation_data)
+        _, grad = cached_compute_cost_and_gradients(x_scaled, σ_pixels, simulation_data, sensemode)
         
         if iteration % cg_restart_freq == 0 || norm(grad) > 10 * norm(grad_old)
             direction .= -grad
