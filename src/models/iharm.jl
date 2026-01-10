@@ -43,7 +43,7 @@ struct IharmData
     θe::Array{Float64,3}
     sigma::Array{Float64,3}
     beta::Array{Float64,3}
-    #dθedRhi::Array{Float64,3}
+    dθedRhi::Array{Float64,3}
 end
 
 
@@ -62,7 +62,7 @@ function _read_single_primitive(file_handle, prim_name::String)
 end
 
 
-function load_data(filename::String, Nfiles::Int = 1)
+function load_data(filename::String, trat_large::Float64 ,Nfiles::Int = 1)
     println("Loading data from '$filename' into 'iharm' module...")
     !isfile(filename) && error("File not found: $filename")
 
@@ -115,12 +115,12 @@ function load_data(filename::String, Nfiles::Int = 1)
                     end
                 end
             end
-            data_array[n] = IharmData(rho, uu, u1, u2, u3, b1, b2, b3, zeros(size(rho)), zeros(size(rho)), zeros(size(rho)), zeros(size(rho)), zeros(size(rho)))            
+            data_array[n] = IharmData(rho, uu, u1, u2, u3, b1, b2, b3, zeros(size(rho)), zeros(size(rho)), zeros(size(rho)), zeros(size(rho)), zeros(size(rho)), zeros(size(rho)))            
         end
     end
 
-    println("Primitives successfully loaded. Dimensions: ", size(rho))
-    println("Calculating physical quantities...")
+    #println("Primitives successfully loaded. Dimensions: ", size(rho))
+    #println("Calculating physical quantities...")
     for n in 1:Nfiles
         Threads.@threads for i in 1:(N1)
             for j in 1:(N2)
@@ -176,7 +176,7 @@ function load_data(filename::String, Nfiles::Int = 1)
                 end
             end
         end
-        init_physical_quantities(data_array, n, rescale_factor)  # Initialize physical quantities for the first dataset
+        init_physical_quantities(data_array, n, rescale_factor, trat_large)  # Initialize physical quantities for the first dataset
     end
 
     # Check if all fields were loaded
@@ -191,8 +191,8 @@ function load_data(filename::String, Nfiles::Int = 1)
 end
 
 
-function init_physical_quantities(data, n::Int64, rescale_factor::Float64)
-    println("Using mixed tp_over_te with trat_small = $(trat_small), trat_large = $(trat_large), and beta_crit = $(beta_crit)")
+function init_physical_quantities(data, n::Int64, rescale_factor::Float64, trat_large::Float64)
+    #println("Using mixed tp_over_te with trat_small = $(trat_small), trat_large = $(trat_large), and beta_crit = $(beta_crit)")
     
     # Pre-compute constants
     rescale_factor_sqrt = sqrt(rescale_factor)
@@ -212,7 +212,8 @@ function init_physical_quantities(data, n::Int64, rescale_factor::Float64)
     beta_arr = data[n].beta
     RHO_arr = data[n].RHO
     UU_arr = data[n].UU
-    #dθedRhi = data[n].dθedRhi
+    dθedRhi = data[n].dθedRhi
+
     
     @inbounds Threads.@threads for i in 1:N1
         for j in 1:N2
@@ -238,12 +239,18 @@ function init_physical_quantities(data, n::Int64, rescale_factor::Float64)
                 θe_unit = θe_factor / (game_minus_1 * trat + gamp_minus_1)
                 θe_val = θe_unit * uu_ijk / rho_ijk
 
-                #dtratdRhi = betasq * betasq_plus_1_inv
-                #dθe_unit_dRhi = - θe_factor * game_minus_1/((game_minus_1 * trat + gamp_minus_1)^2) * dtratdRhi
-                #dθe_dRhi = dθe_unit_dRhi * uu_ijk / rho_ijk 
+                dtratdRhi = betasq * betasq_plus_1_inv
+                dθe_unit_dRhi = - θe_factor * game_minus_1/((game_minus_1 * trat + gamp_minus_1)^2) * dtratdRhi
+                dθe_dRhi = dθe_unit_dRhi * uu_ijk / rho_ijk 
                 
-                θe_arr[i, j, k] = θe_val > 1.0e-3 ? θe_val : 1.0e-3
-                #dθedRhi[i,j,k] = dθe_dRhi
+                if θe_val > 1.0e-3
+                    θe_arr[i, j, k] = θe_val
+                    dθedRhi[i, j, k] = dθe_dRhi
+                else
+                    θe_arr[i, j, k] = 1.0e-3
+                    dθedRhi[i, j, k] = 0.0
+                end
+
                 sigma_arr[i, j, k] = sigma_m > SMALL ? sigma_m : SMALL
                 beta_arr[i, j, k] = beta_m > SMALL ? beta_m : SMALL
             end
@@ -327,6 +334,17 @@ function get_model_thetae(X, data)
     tfac = 0.0 #TODO: when using slowlight, we should implement this
 
     return interp_scalar_time(X, data[nA].θe, data[nB].θe, tfac)
+end
+
+function get_model_thetae_deriv(X, data)
+    if(X_in_domain(X) == 0)
+        return 0.0
+    end
+    nA = 1
+    nB = 1
+    tfac = 0.0 #TODO: when using slowlight, we should implement this
+
+    return interp_scalar_time(X, data[nA].dθedRhi, data[nB].dθedRhi, tfac)
 end
 
 function get_model_b(X, data)

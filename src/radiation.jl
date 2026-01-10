@@ -22,9 +22,12 @@ function Bnu_inv(nu, θe)
     end
 end
 
-function jar_calc(data, X, Kcon, bhspin)
+function jar_calc(data, X, Kcon, bhspin, derivative_calculation = false)
     Ne = get_model_ne(X, data)
     if(Ne == 0.0)
+        if(derivative_calculation)
+            return (0.0, 0.0, 0.0, 0.0)
+        end
         return (0.0, 0.0)
     end
 
@@ -42,15 +45,34 @@ function jar_calc(data, X, Kcon, bhspin)
     
     θe =  get_model_thetae(X, data)
     if(θ <= 0.0 || θ >= π)
-        return (0, 0);
+        if(derivative_calculation)
+            return (0., 0., 0., 0.)
+        end
+        return (0., 0.);
     end
 
-    j = maxwell_juettner_I(b, θ, θe, nu, Ne) / nusq
-
+    j = maxwell_juettner_I(b, θ, θe, nu, Ne) / nusq    
     Bnuinv = Bnu_inv(nu, θe)
     k = 0.0
     if(Bnuinv > 0)
         k = j/Bnuinv
+    end
+    if(derivative_calculation)
+        #interpolate dthetae/dRhigh
+        dθe_dRhigh = get_model_thetae_deriv(X, data)
+        #derivative of j with respect to θe using autodiff
+        dj_dθe = ForwardDiff.derivative(θe -> maxwell_juettner_I(b, θ, θe, nu, Ne) / nusq, θe)
+        #derivative of k with respect to θe using autodiff
+        if(Bnuinv > 0)
+            dk_dθe = (dj_dθe * Bnuinv - j * ForwardDiff.derivative(θe -> Bnu_inv(nu, θe), θe)) / (Bnuinv * Bnuinv)
+        else
+            dk_dθe = 0.0
+        end
+
+        dj_dRhigh = dj_dθe * dθe_dRhigh
+        dk_dRhigh = dk_dθe * dθe_dRhigh
+
+        return (j, k, dj_dRhigh, dk_dRhigh)
     end
 
     return (j, k)
@@ -58,7 +80,7 @@ function jar_calc(data, X, Kcon, bhspin)
 end
 
 
-function get_jk(X, Kcon, freq::Float64, bhspin, data)
+function get_jk(X, Kcon, freq::Float64, bhspin, data; derivative_calculation = false)
 
     if MODEL == "analytic"
         return get_analytic_jk(X, Kcon, freq, bhspin)
@@ -68,7 +90,7 @@ function get_jk(X, Kcon, freq::Float64, bhspin, data)
         if(data === nothing)
             error("data must be provided for iharm model")
         end
-        return jar_calc(data, X, Kcon, bhspin)
+        return jar_calc(data, X, Kcon, bhspin, derivative_calculation)
     else
         error("Unknown model: $MODEL")
     end
@@ -124,14 +146,7 @@ function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Fl
 
         jf, kf = get_jk(Xf, Kconf, freq, bhspin, data)
         Intensity::Float64 = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)
-        # if(I == 17 && J == 19 && Intensity > 0.0)
-        #     @printf("At step %d, Intensity: %.12e\n", nstep, Intensity * (230e9)^(3.));
-        #     @printf("tf.X = %.15e, %.15e, %.15e, %.15e/ tf.K = %.15e, %.15e, %.15e, %.15e\n", 
-        #             Xf[1], Xf[2], Xf[3], Xf[4],
-        #             Kconf[1], Kconf[2], Kconf[3], Kconf[4]);
-        #     @printf("kf = %.15e, jf = %.15e\n", kf, jf);
-        #     @printf("\n");
-        # end
+
 
         if (isnan(Intensity) || isinf(Intensity))
             @error "NaN or Inf encountered in intensity calculation at pixel ($I, $J)"

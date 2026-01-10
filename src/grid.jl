@@ -55,45 +55,134 @@ function ijktoX(i,j,k, X)
 end
 
 
+
+# function interp_scalar(X, data)
+#     # del corresponds to offsets: del[2]->i, del[3]->j, del[4]->k
+#     del = zeros(eltype(X), 4)
+
+#     # Get base indices (bottom-left of the 2x2x2 cube in trilinear)
+#     i_base, j_base, k_base = Xtoijk_ghost!(X, del)
+
+#     (N1, N2, N3) = size(data)
+
+#     # --- 1. Compute Cubic Weights ---
+#     # We use Catmull-Rom spline weights. 
+#     # These return a 4-element tuple/vector of weights for neighbors -1, 0, +1, +2
+#     @inline function get_cubic_weights(t)
+#         t2 = t * t
+#         t3 = t2 * t
+        
+#         # Weights for p[-1], p[0], p[1], p[2]
+#         w0 = -0.5 * t3 +       t2 - 0.5 * t
+#         w1 =  1.5 * t3 - 2.5 * t2 + 1.0
+#         w2 = -1.5 * t3 + 2.0 * t2 + 0.5 * t
+#         w3 =  0.5 * t3 - 0.5 * t2
+#         return (w0, w1, w2, w3)
+#     end
+
+#     w_i = get_cubic_weights(del[2])
+#     w_j = get_cubic_weights(del[3])
+#     w_k = get_cubic_weights(del[4])
+
+#     # --- 2. Interpolation Loop ---
+#     val = zero(eltype(data))
+
+#     # We loop over the 4x4x4 neighborhood
+#     # m, n, p are offsets relative to base indices: -1, 0, 1, 2
+#     # But since Julia is 1-based and our weights tuple is 1-based:
+#     # weight index 1 -> offset -1
+#     # weight index 2 -> offset  0 (the base index)
+#     # weight index 3 -> offset +1
+#     # weight index 4 -> offset +2
+
+#     for (idx_k, offset_k) in enumerate(-1:2)
+        
+#         # --- K PERIODIC FIX (Extended) ---
+#         k_curr = k_base + offset_k
+#         if k_curr < 1
+#             k_curr = k_curr + N3
+#         elseif k_curr > N3
+#             k_curr = k_curr - N3
+#         end
+#         # ---------------------------------
+
+#         wk = w_k[idx_k]
+
+#         for (idx_j, offset_j) in enumerate(-1:2)
+            
+#             # --- J Boundary (Clamp) ---
+#             j_curr = clamp(j_base + offset_j, 1, N2)
+#             wj = w_j[idx_j]
+
+#             for (idx_i, offset_i) in enumerate(-1:2)
+                
+#                 # --- I Boundary (Clamp) ---
+#                 i_curr = clamp(i_base + offset_i, 1, N1)
+#                 wi = w_i[idx_i]
+
+#                 # Accumulate weighted sum
+#                 val += data[i_curr, j_curr, k_curr] * wi * wj * wk
+#             end
+#         end
+#     end
+#     # --- 3. SAFETY CLAMP FOR PHYSICS ---
+#     # Cubic splines can "overshoot" into negative values near sharp gradients 
+#     # (like a black hole horizon or jet edge). 
+#     # Since Density/Temp must be > 0, we clamp the bottom to a tiny number.
+#     return max(val, 1e-2)
+#     return val
+# end
+
+# function interp_scalar(X, data)
+#     #del::MVec4 = [0.0, 0.0, 0.0, 0.0]
+#     del = zeros(eltype(X), 4)
+
+#     i, j, k = Xtoijk_ghost!(X, del)
+
+#     (N1_data, N2_data, N3_data) = size(data) 
+
+#     ip1 = i + 1
+#     jp1 = j + 1
+
+#     # --- k (phi) PERIODIC FIX ---
+#     # k is the base index (e.g., 1 to 32)
+#     kp1 = k + 1
+#     if kp1 > N3_data
+#         kp1 = 1  # Wrap around to the first cell
+#     end
+#     # --- END FIX ---
+
+#     b1 = 1.0 - del[2]
+#     b2 = 1.0 - del[3]
+
+#     # Interpolate in i and j
+#     interp = data[i, j, k]   * b1 * b2 +
+#              data[ip1, j, k] * del[2] * b2 +
+#              data[i, jp1, k] * b1 * del[3] +
+#              data[ip1, jp1, k] * del[2] * del[3]
+
+#     # Interpolate in k (phi)
+#     # This uses the wrapped kp1, so it correctly interpolates
+#     # between the last cell (k=32) and the first cell (kp1=1).
+#     interp = interp * (1.0 - del[4]) + (
+#              data[i, j, kp1]   * b1 * b2 +
+#              data[ip1, j, kp1] * del[2] * b2 +
+#              data[i, jp1, kp1] * b1 * del[3] +
+#              data[ip1, jp1, kp1] * del[2] * del[3]
+#     ) * del[4]
+
+#     return interp
+# end
+
 function interp_scalar(X, data)
-    #del::MVec4 = [0.0, 0.0, 0.0, 0.0]
     del = zeros(eltype(X), 4)
+    i,j,k = Xtoijk_ghost!(X, del)
 
-    i, j, k = Xtoijk_ghost!(X, del)
-
-    (N1_data, N2_data, N3_data) = size(data) 
-
-    ip1 = i + 1
-    jp1 = j + 1
-
-    # --- k (phi) PERIODIC FIX ---
-    # k is the base index (e.g., 1 to 32)
-    kp1 = k + 1
-    if kp1 > N3_data
-        kp1 = 1  # Wrap around to the first cell
+    if(data[i,j,k] <= 1.)
+        return 1.
     end
-    # --- END FIX ---
 
-    b1 = 1.0 - del[2]
-    b2 = 1.0 - del[3]
-
-    # Interpolate in i and j
-    interp = data[i, j, k]   * b1 * b2 +
-             data[ip1, j, k] * del[2] * b2 +
-             data[i, jp1, k] * b1 * del[3] +
-             data[ip1, jp1, k] * del[2] * del[3]
-
-    # Interpolate in k (phi)
-    # This uses the wrapped kp1, so it correctly interpolates
-    # between the last cell (k=32) and the first cell (kp1=1).
-    interp = interp * (1.0 - del[4]) + (
-             data[i, j, kp1]   * b1 * b2 +
-             data[ip1, j, kp1] * del[2] * b2 +
-             data[i, jp1, kp1] * b1 * del[3] +
-             data[ip1, jp1, kp1] * del[2] * del[3]
-    ) * del[4]
-
-    return interp
+    return data[i,j,k]
 end
 
 

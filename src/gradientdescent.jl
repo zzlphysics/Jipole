@@ -55,11 +55,13 @@ function FiniteDifferencesθ(ro, th, phi, DXsize, DYsize, pixels_x, pixels_y, So
 
     # Scales the intensity of each pixel by the real size of each pixel
     scale_factor = CalculateScaleFactor(DXsize, DYsize, pixels_x, pixels_y, SourceD, L_unit)
+    println("Calculating trajectories...")
     # integrate_emission_flag setted to false signals that the output of the function will be the trajectory and not the Image
     trajectoryh = CalculateGeodesics(Xcamh, fovx, fovy, freq, maxnstep, pixels_x, pixels_y, bhspin, Rout, Rstop);
     trajectoryl = CalculateGeodesics(Xcaml, fovx, fovy, freq, maxnstep, pixels_x, pixels_y, bhspin, Rout, Rstop);
 
     # Integrate the emission along the geodesics
+    println("Integrating emission along geodesics...")
     Imageh = IpoleGeoIntensityIntegration(trajectoryh, freq, pixels_x, pixels_y, scale_factor, bhspin, data)
     Imagel = IpoleGeoIntensityIntegration(trajectoryl, freq, pixels_x, pixels_y, scale_factor, bhspin, data)
 
@@ -69,11 +71,61 @@ function FiniteDifferencesθ(ro, th, phi, DXsize, DYsize, pixels_x, pixels_y, So
     dI_dθo = (Imageh - Imagel) / (2 * h)  # Finite difference approximation
 
     #calculate the image at the central value
+    println("Calculating central image...")
     Xcam = MVec4(camera_position(ro, th, phi, bhspin, Rout))
     trajectory = CalculateGeodesics(Xcam, fovx, fovy, freq, maxnstep, pixels_x, pixels_y, bhspin, Rout, Rstop);
     Imagec = IpoleGeoIntensityIntegration(trajectory, freq, pixels_x, pixels_y, scale_factor, bhspin, data);
     trajectory = nothing
     return dI_dθo, Imagec
+end
+
+function FiniteDifferencesTrat(ro, th, phi, DXsize, DYsize, pixels_x, pixels_y, SourceD, freq, maxnstep, h_trat, bhspin, Rout, Rstop, path)
+    """
+    Finite differences method for trat_large (Rhigh).
+    """
+    # 1. Define the perturbation
+    # We use the global trat_large as the center point
+    Trat_h = trat_large + h_trat
+    Trat_l = trat_large - h_trat
+
+    # 2. Geometry Calculation (Only needs to be done ONCE)
+    #    The black hole shadow shape doesn't care about electron temperature.
+    fovx = DXsize / ro
+    fovy = DYsize / ro
+    Xcam = MVec4(camera_position(ro, th, phi, bhspin, Rout))
+    
+    # Calculate scale factor
+    scale_factor = CalculateScaleFactor(DXsize, DYsize, pixels_x, pixels_y, SourceD, L_unit)
+
+    # Compute Trajectories (Expensive step - done only once)
+    trajectory = CalculateGeodesics(Xcam, fovx, fovy, freq, maxnstep, pixels_x, pixels_y, bhspin, Rout, Rstop)
+
+    # 3. Intensity Integration for Upper Bound (+h)
+    #    We re-initialize the physics data with the HIGH temp
+    #    Note: We assume 'data' is a vector of structs. We pick the first snapshot (n=1) for simplicity here.
+    simulation_data = load_data(dump_filepath, Trat_h);
+    Imageh = IpoleGeoIntensityIntegration(trajectory, freq, pixels_x, pixels_y, scale_factor, bhspin, simulation_data)
+
+    # 4. Intensity Integration for Lower Bound (-h)
+    #    We re-initialize the physics data with the LOW temp
+    simulation_data = load_data(dump_filepath, Trat_l);
+    Imagel = IpoleGeoIntensityIntegration(trajectory, freq, pixels_x, pixels_y, scale_factor, bhspin, simulation_data)
+
+    # 5. Restore Physics (Optional but polite)
+    #    Reset data to the central value so subsequent cells aren't confused
+    simulation_data = load_data(dump_filepath, trat_large);
+
+    # 6. Compute Derivative
+    dI_dRhigh = (Imageh - Imagel) / (2 * h_trat)
+    
+    # Calculate central image (optional, Imageh+Imagel/2 is a good approx, but let's be exact)
+    # Since we just reset the data to trat_large, we can integrate one last time:
+    Imagec = IpoleGeoIntensityIntegration(trajectory, freq, pixels_x, pixels_y, scale_factor, bhspin, simulation_data)
+
+    # Cleanup
+    trajectory = nothing
+    
+    return dI_dRhigh, Imagec
 end
 
 
@@ -159,8 +211,7 @@ function armijo_line_search!(cost_func, compute_gradients!, x, grad, direction, 
         end
         
         if any_bounded
-            println("  Step $i: Hit bounds, step_size=$step_size, wanted to try a = $((x[2] .+ step_size .* direction[2] )* 0.6), θo = $((x[1] .+ step_size .* direction[1] )* 60)")
-            # if a is the one hitting bounds convert the step_size to a proper value, if it's theta, converge it to a proper value
+            println("  Step $i: \e[31mHit bounds\e[0m, step_size=$step_size, wanted to try Rhigh = $((x[2] .+ step_size .* direction[2] )* 120.0), θo = $((x[1] .+ step_size .* direction[1] )* 60)")            # if a is the one hitting bounds convert the step_size to a proper value, if it's theta, converge it to a proper value
             if x_new[2] == bounds[2][1] || x_new[2] == bounds[2][2]
                 step_size = (x_new[2] - x[2]) / direction[2]
             end
@@ -180,7 +231,7 @@ function armijo_line_search!(cost_func, compute_gradients!, x, grad, direction, 
         
         # Evaluate cost at new point
         f_new = cost_func(x_new, args...)
-        println("  Step $i: step_size=$step_size, f_new=$f_new, improvement=$(f0-f_new), spin tested = $(x_new[2] * 0.6), θo tested = $(x_new[1] * 60)")
+        println("  Step $i: step_size=$step_size, f_new=$f_new, improvement=$(f0-f_new), Rhigh tested = $(x_new[2] * 120.0), θo tested = $(x_new[1] * 60)")
         
         # Keep track of best point found so far
         if f_new < best_f
@@ -193,7 +244,7 @@ function armijo_line_search!(cost_func, compute_gradients!, x, grad, direction, 
         #armijo_threshold = f0 + α * step_size * df0
         armijo_threshold = f0 + α * step_size * df0
         if f_new <= armijo_threshold
-            println("  Armijo condition satisfied!")
+            println("  \e[32mArmijo condition satisfied!\e[0m")
             println(" New cost function value: $f_new")
             return x_new, f_new, step_size
         end
@@ -593,11 +644,11 @@ end
 
 
 
-function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, nmaxstep, 
+function true_conjugate_gradient_optimization_GRMHD(Iobs, ro, θoi, Rhighi, freq, nx, ny, nmaxstep, 
                                             fovx, fovy, Rout, Rstop, σ_pixels=0.0; 
                                             cost_tol=2e-11, param_tol=1e-8, grad_tol=1e-10,
                                             max_iterations=200, cg_restart_freq=20,
-                                            optimize_param::Symbol=:both, simulation_data = nothing, sensemode = "AD")
+                                            optimize_param::Symbol=:both, dump_filepath = nothing, sensemode = "AD")
     """
     True conjugate gradient optimization with proper scaling and convergence criteria
     
@@ -623,6 +674,8 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
     """
     # Pre-allocate trajectory arrays for each thread (this is going to be used in the autodiff function)
     num_threads = Threads.nthreads()
+    simulation_data = load_data(dump_filepath, Rhighi);
+
     thread_trajs = Vector{Vector{OfTraj}}(undef, num_threads)
     for tid in 1:num_threads
         thread_trajs[tid] = Vector{OfTraj}()
@@ -630,8 +683,8 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
     end
 
     # You can optimize either both parameters, only θo, or only a, it depends on the optimize_param argument. Make sure it is one of the three options.
-    if !(optimize_param in [:both, :theta, :spin])
-        throw(ArgumentError("optimize_param must be :both, :theta, or :spin"))
+    if !(optimize_param in [:both, :theta, :Rhigh])
+        throw(ArgumentError("optimize_param must be :both, :theta, or :Rhigh"))
     end
 
     if !(sensemode in ["AD", "FD"])
@@ -640,68 +693,71 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
     
     # Parameter scaling factors (normalize to similar ranges)
     θo_scale = 60.0
-    a_scale = 0.6
-    scales = [θo_scale, a_scale]
+    Rhigh_scale = 2500.0
+    scales = [θo_scale, Rhigh_scale]
     
     # Initialize with scaled parameters
-    x_scaled = [θoi / θo_scale, ai / a_scale]
+    x_scaled = [θoi / θo_scale, Rhighi / Rhigh_scale]
     bounds_scaled = [(0.1 / θo_scale, 90.0 / θo_scale), 
-                     (0.0 / a_scale, 0.994 / a_scale)]
+                     (0.0 / Rhigh_scale, 200.0 / Rhigh_scale)]
     
     # Determine which parameters to optimize
     optimize_theta = optimize_param in [:both, :theta]
-    optimize_spin = optimize_param in [:both, :spin]
+    optimize_Rhigh = optimize_param in [:both, :Rhigh]
     
     println("Optimization mode: $optimize_param")
-    println("Optimizing θo: $optimize_theta, Optimizing a: $optimize_spin")
+    println("Optimizing θo: $optimize_theta, Optimizing Rhigh: $optimize_Rhigh")
     
     dI_dθo = Matrix{Float64}(undef, nx, ny)
-    dI_da = Matrix{Float64}(undef, nx, ny)
+    dI_dRhigh = Matrix{Float64}(undef, nx, ny)
     I_calc = Matrix{Float64}(undef, nx, ny)
     
     function compute_cost_and_gradients(x_scaled_val, σ_pixels=0.0, simulation_data = nothing, sensemode = "AD")
         # Convert back to physical parameters
         θo_val = x_scaled_val[1] * θo_scale
-        a_val = x_scaled_val[2] * a_scale
-        println("Running AutoDiffGeoTrajEulerMethod with θo = $θo_val, a = $a_val and applying σ_pixels = $σ_pixels filter")
-        # Compute intensities and derivatives
+        Rhigh_val = x_scaled_val[2] * Rhigh_scale
+        if optimize_Rhigh
+            simulation_data = load_data(dump_filepath, Rhigh_val);
+        end
+        println("\n Running AutoDiffGeoTrajEulerMethod with θo = \e[32m$θo_val\e[0m, Rhigh = \e[32m$Rhigh_val\e[0m and applying σ_pixels = \e[32m$σ_pixels\e[0m filter")
         if(sensemode == "AD")
             Threads.@threads for i in 0:(nx-1)
                 for j in 0:(ny-1)
                     tid = Threads.threadid()
                     dI_dθo_out = Ref{Float64}()
                     intensity_out = Ref{Float64}()
-                    dI_da_out = Ref{Float64}()
+                    dI_dRhigh_out = Ref{Float64}()
                     
-                    AutoDiffGeoTrajEulerMethod_GRMHD!(thread_trajs[tid], dI_dθo_out, intensity_out, dI_da_out,
+                    AutoDiffGeoTrajEulerMethod_GRMHD!(thread_trajs[tid], dI_dθo_out, intensity_out, dI_dRhigh_out,
                         ro, θo_val, phi, bhspin, nx, ny, nmaxstep, i, j, freq, fovx, fovy, Rout, Rstop, simulation_data)
                     I_calc[i+1, j+1] = intensity_out[]
-                    dI_da[i+1, j+1] = dI_da_out[]
+                    dI_dRhigh[i+1, j+1] = dI_dRhigh_out[]
                     dI_dθo[i+1, j+1] = dI_dθo_out[]
                 end
             end
         elseif(sensemode == "FD")
             println("Using Finite Differences to compute gradients")
-            dI_dθo, I_calc = FiniteDifferencesθ(ro, θo_val, phi, DXsize, DYsize, nx, ny, SourceD, freq, nmaxstep, 1e-4, a_val, Rout, Rstop, simulation_data)
-            if(optimize_spin)
-                dI_da, _ = FiniteDifferences_a(ro, θo_val, phi, DXsize, DYsize, nx, ny, SourceD, freq, nmaxstep, 1e-4, a_val, Rout, Rstop, simulation_data)
+            dI_dθo, I_calc = FiniteDifferencesθ(ro, θo_val, phi, DXsize, DYsize, nx, ny, SourceD, freq, nmaxstep, 1e-4, bhspin, Rout, Rstop, simulation_data)
+            if(optimize_Rhigh)
+                error("Finite Differences for Rhigh not implemented yet")
+                dI_dRhigh, _ = FiniteDifferences_Rhigh(ro, θo_val, phi, DXsize, DYsize, nx, ny, SourceD, freq, nmaxstep, 1e-4, bhspin, Rout, Rstop, simulation_data)
             end
         else
             throw(ArgumentError("sensemode must be either 'AD' or 'FD'"))
         end
         I_calc = imfilter(I_calc, Kernel.gaussian(σ_pixels))
         dI_dθo = imfilter(dI_dθo, Kernel.gaussian(σ_pixels))
-        dI_da = imfilter(dI_da, Kernel.gaussian(σ_pixels))
+        dI_dRhigh = imfilter(dI_dRhigh, Kernel.gaussian(σ_pixels))
         cost = cost_func(Iobs, I_calc)
-        grad_θo, grad_a = GradientofCostFunction(Iobs, I_calc, dI_dθo, dI_da)
+        grad_θo, grad_Rhigh = GradientofCostFunction(Iobs, I_calc, dI_dθo, dI_dRhigh)
         
-        grad_scaled = [grad_θo * θo_scale, grad_a * a_scale]
+        grad_scaled = [grad_θo * θo_scale, grad_Rhigh * Rhigh_scale]
         
-        # Zero out gradients if evolving only theta or only spin. 
+        # Zero out gradients if evolving only theta or only rhigh. 
         if !optimize_theta
             grad_scaled[1] = 0.0
         end
-        if !optimize_spin
+        if !optimize_Rhigh
             grad_scaled[2] = 0.0
         end
         
@@ -713,7 +769,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
         if !optimize_theta
             constrained_direction[1] = 0.0
         end
-        if !optimize_spin
+        if !optimize_Rhigh
             constrained_direction[2] = 0.0
         end
         
@@ -727,7 +783,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
         if optimize_theta
             grad_norm += grad[1]^2
         end
-        if optimize_spin
+        if optimize_Rhigh
             grad_norm += grad[2]^2
         end
         grad_norm = sqrt(grad_norm)
@@ -774,9 +830,9 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
 
     if check_convergence(cost, grad, [cost], 0)
         θo_final = x_scaled[1] * θo_scale
-        a_final = x_scaled[2] * a_scale
+        Rhigh_final = x_scaled[2] * Rhigh_scale
         println("Initial solution already satisfies tolerance")
-        return θo_final, a_final, [cost], 1
+        return θo_final, Rhigh_final, [cost], 1
     end
     # Initialize CG variables
     direction = -copy(grad)
@@ -784,7 +840,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
     if !optimize_theta
         direction[1] = 0.0
     end
-    if !optimize_spin
+    if !optimize_Rhigh
         direction[2] = 0.0
     end
     
@@ -792,12 +848,12 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
     push!(costs, cost)
     θos = Float64[]
     push!(θos, x_scaled[1] * θo_scale)
-    as = Float64[]
-    push!(as, x_scaled[2] * a_scale)
+    Rhighs = Float64[]
+    push!(Rhighs, x_scaled[2] * Rhigh_scale)
     θo_phys = x_scaled[1] * θo_scale
-    a_phys = x_scaled[2] * a_scale
+    Rhigh_phys = x_scaled[2] * Rhigh_scale
 
-    println("Initial cost: $cost, Initial θo: $θo_phys, Initial a: $a_phys")
+    println("Initial cost: $cost, Initial θo: $θo_phys, Initial Rhigh: $Rhigh_phys")
     println("Initial gradient norm: $(norm(grad))")
     
     x_old = copy(x_scaled)
@@ -809,24 +865,22 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
         # Line search with constrained direction
         if (iteration == 1)
             aggressive_initial_step = max(3.0, 0.3 / max(norm(grad), 1e-12))
-            aggressive_initial_step = 0.3/norm(grad)
+            #aggressive_initial_step = 0.3/norm(grad)
         else
-            if(step_size < 0.05/(a_scale * direction[2] ) && optimize_spin)
-                step_size = 0.05/(a_scale * direction[2] )
-                println("Step size for a is too small, resetting to $step_size")
+            if(step_size < 0.05/(Rhigh_scale * direction[2] ) && optimize_Rhigh)
+                step_size = 0.05/(Rhigh_scale * direction[2] )
+                println("Step size for Rhigh is too small, resetting to $step_size")
             end
 
-            if(step_size < 3.0/(θo_scale * direction[1] ) && optimize_theta)
-                step_size = 3.0/(θo_scale * direction[1] )
+            if(step_size < 0.1/(θo_scale * direction[1] ) && optimize_theta)
+                step_size = 0.1/(θo_scale * direction[1] )
                 println("Step size for θo is too small, resetting to $step_size")
             end
 
             aggressive_initial_step = step_size
-            aggressive_initial_step = max(3.0, 0.3 / max(norm(grad), 1e-12))
-
         end
 
-        println("Trying aggressive initial step: $aggressive_initial_step, set at iteration $iteration")
+        println("Trying initial stepsize of $aggressive_initial_step, set at iteration $iteration")
         println("Cost before line search: $cost")
         cost_comparison = copy(cost)
         x_new, cost_new, step_size = constrained_armijo_line_search!(
@@ -850,7 +904,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
             if !optimize_theta
                 direction[1] = 0.0
             end
-            if !optimize_spin
+            if !optimize_Rhigh
                 direction[2] = 0.0
             end
             
@@ -871,7 +925,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
         if optimize_theta
             x_scaled[1] = x_new[1]
         end
-        if optimize_spin
+        if optimize_Rhigh
             x_scaled[2] = x_new[2]
         end
         
@@ -881,10 +935,10 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
         push!(costs, cost)
         
         θo_phys = x_scaled[1] * θo_scale
-        a_phys = x_scaled[2] * a_scale
+        Rhigh_phys = x_scaled[2] * Rhigh_scale
         push!(θos, θo_phys)
-        push!(as, a_phys)
-        println("Updated: cost = $cost, θo = $θo_phys, a = $a_phys, step = $step_size")
+        push!(Rhighs, Rhigh_phys)
+        println("Updated: cost = $cost, θo = $θo_phys, Rhigh = $Rhigh_phys, step = $step_size")
         println("Parameter change magnitude: $param_change")
         
         converged = check_convergence(cost, grad, costs, iteration)
@@ -897,8 +951,8 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
             converged = false
         end
         if converged
-            println("Converged! Final θo = $θo_phys, Final a = $a_phys")
-            return θos, as, costs, max_iterations
+            println("Converged! Final θo = $θo_phys, Final Rhigh = $Rhigh_phys")
+            return θos, Rhighs, costs, max_iterations
         end
         
         grad_old = copy(grad)
@@ -928,7 +982,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
                 if !optimize_theta
                     direction[1] = 0.0
                 end
-                if !optimize_spin
+                if !optimize_Rhigh
                     direction[2] = 0.0
                 end
                 
@@ -941,7 +995,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
                     active_dir_norm += direction[1]^2
                     active_dot += direction[1] * grad[1]
                 end
-                if optimize_spin
+                if optimize_Rhigh
                     active_grad_norm += grad[2]^2
                     active_dir_norm += direction[2]^2
                     active_dot += direction[2] * grad[2]
@@ -955,7 +1009,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
                     if !optimize_theta
                         direction[1] = 0.0
                     end
-                    if !optimize_spin
+                    if !optimize_Rhigh
                         direction[2] = 0.0
                     end
                     println("Reset to steepest descent (not descent direction)")
@@ -967,7 +1021,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
                 if !optimize_theta
                     direction[1] = 0.0
                 end
-                if !optimize_spin
+                if !optimize_Rhigh
                     direction[2] = 0.0
                 end
                 println("Reset to steepest descent (small denominator)")
@@ -977,6 +1031,6 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
     
     @warn "Maximum iterations reached without convergence"
     θo_final = x_scaled[1] * θo_scale
-    a_final = x_scaled[2] * a_scale
-    return θos, as, costs, max_iterations
+    Rhigh_final = x_scaled[2] * Rhigh_scale
+    return θos, Rhighs, costs, max_iterations
 end

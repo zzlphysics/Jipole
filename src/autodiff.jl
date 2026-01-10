@@ -569,7 +569,7 @@ function transfer_step(I_prev, X_curr, K_curr, X_next, K_next, dl, freq, bhspin,
     return approximate_solve(I_prev, ji, ki, jf, kf, dl)
 end
 
-function AutoDiffGeoTrajEulerMethod_GRMHD!(traj, dI_dθo_out::Base.RefValue{Float64}, intensity_out::Base.RefValue{Float64}, dI_da_out::Base.RefValue{Float64},ro::Float64, θo::Float64, phi::Float64, bhspin::Float64, nx::Int64, ny::Int64, nmaxstep::Int64,i::Int64,j::Int64,freq::Float64, fovx::Float64, fovy::Float64, Rout::Float64, Rstop::Float64, data = nothing)
+function AutoDiffGeoTrajEulerMethod_GRMHD!(traj, dI_dθo_out::Base.RefValue{Float64}, intensity_out::Base.RefValue{Float64}, dI_dRhigh_out::Base.RefValue{Float64},ro::Float64, θo::Float64, phi::Float64, bhspin::Float64, nx::Int64, ny::Int64, nmaxstep::Int64,i::Int64,j::Int64,freq::Float64, fovx::Float64, fovy::Float64, Rout::Float64, Rstop::Float64, data = nothing)
     """
     Returns the intensity and the derivative of the intensity with respect to θo for pixel (i,j) using autodiff.
 
@@ -707,6 +707,7 @@ function AutoDiffGeoTrajEulerMethod_GRMHD!(traj, dI_dθo_out::Base.RefValue{Floa
     Kconf = MVec4(undef)
     Intensity = 0.0
     dI_dθo = 0.0
+    dI_dRhigh = 0.0
     jac_I_X = MVec4(undef)
     jac_I_K = MVec4(undef)
 
@@ -717,7 +718,7 @@ function AutoDiffGeoTrajEulerMethod_GRMHD!(traj, dI_dθo_out::Base.RefValue{Floa
         Kconi[k] = traj[step].Kcon[k]
     end
 
-    ji, ki = get_jk(Xi, Kconi, freq, bhspin, data)
+    ji, ki, dji_dRhigh, dki_dRhigh = get_jk(Xi, Kconi, freq, bhspin, data, derivative_calculation = true)
 
     # Then replace your ForwardDiff calls in the loop with:
     for nstep = step:-1:2
@@ -760,7 +761,19 @@ function AutoDiffGeoTrajEulerMethod_GRMHD!(traj, dI_dθo_out::Base.RefValue{Floa
         
         # dI_new = (Transmission * dI_old) + Source_Terms
         dI_dθo = (jac_I_I * dI_dθo) + term_geom_i + term_geom_f
-        jf, kf = get_jk(Xf, Kconf, freq, bhspin, data)
+        jf, kf, djf_dRhigh, dkf_dRhigh = get_jk(Xf, Kconf, freq, bhspin, data, derivative_calculation = true)
+
+
+        # 1. Calculate partial derivatives of approximate_solve w.r.t j and k
+        # We differentiate w.r.t [ji, ki, jf, kf]
+        # internal_grads will contain [dI/dji, dI/dki, dI/djf, dI/dkf]
+        internal_grads = ForwardDiff.gradient(
+            v -> approximate_solve(Intensity, v[1], v[2], v[3], v[4], traj[nstep - 1].dl), 
+            [ji, ki, jf, kf]
+        )
+        dI_dji_solve, dI_dki_solve, dI_djf_solve, dI_dkf_solve = internal_grads
+        #Knowing that dI_dRhigh = dI/djnu * dj_dRhigh + dI/dknu * dk_dRhigh
+        dI_dRhigh = (jac_I_I * dI_dRhigh) + (dI_dji_solve * dji_dRhigh) + (dI_dki_solve * dki_dRhigh) + (dI_djf_solve * djf_dRhigh) + (dI_dkf_solve * dkf_dRhigh)
         Intensity = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)
 
         if (isnan(Intensity) || isinf(Intensity))
@@ -773,11 +786,13 @@ function AutoDiffGeoTrajEulerMethod_GRMHD!(traj, dI_dθo_out::Base.RefValue{Floa
         
         ji = jf
         ki = kf
+        dji_dRhigh = djf_dRhigh
+        dki_dRhigh = dkf_dRhigh
     end
 
     dI_dθo_out[] = dI_dθo * freq^3
+    dI_dRhigh_out[] = dI_dRhigh * freq^3
     intensity_out[] = Intensity * freq^3
-    dI_da_out[] = 0 * freq^3
     empty!(traj)
     return nothing
 end
