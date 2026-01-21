@@ -1,4 +1,5 @@
 using ImageFiltering
+using ProgressMeter
 
 
 
@@ -37,11 +38,13 @@ function GradientofCostFunction(ImageObs, ImageTest, dI_dθo, dI_da)
 end
 
 
-function FiniteDifferencesθ(ro, th, phi, DXsize, DYsize, pixels_x, pixels_y, SourceD, freq, maxnstep,h, bhspin, Rout, Rstop, data = nothing)
+function FiniteDifferencesθ(ro, th, phi, DXsize, DYsize, pixels_x, pixels_y, SourceD, freq, maxnstep, h, bhspin, Rout, Rstop, data = nothing, xoff = 0.0, yoff = 0.0)
     """
     Finite differences method to calculate the intensity at each pixel in the image.
-    This function calculates the geodesics and the intensity at each pixel using finite differences.
+    Uses threaded per-pixel integration to minimize memory overhead.
     """
+    
+    # --- Pre-calculations ---
     θh = th + h
     θl = th - h
 
@@ -49,33 +52,81 @@ function FiniteDifferencesθ(ro, th, phi, DXsize, DYsize, pixels_x, pixels_y, So
     fovx = DXsize / ro
     fovy = DYsize / ro
 
-    # Calculate the camera position in native coordinates
+    # Unitless frequency for geodesics
+    freq_unitless = freq * HPL / (ME * CL * CL) 
+
+    # Calculate the camera positions in native coordinates
     Xcamh = MVec4(camera_position(ro, θh, phi, bhspin, Rout))
     Xcaml = MVec4(camera_position(ro, θl, phi, bhspin, Rout))
+    Xcamc = MVec4(camera_position(ro, th, phi, bhspin, Rout))
 
     # Scales the intensity of each pixel by the real size of each pixel
+    # Note: Retained for logging, even if not explicitly passed to integrate_emission! in the new pattern
     scale_factor = CalculateScaleFactor(DXsize, DYsize, pixels_x, pixels_y, SourceD, L_unit)
-    println("Calculating trajectories...")
-    # integrate_emission_flag setted to false signals that the output of the function will be the trajectory and not the Image
-    trajectoryh = CalculateGeodesics(Xcamh, fovx, fovy, freq, maxnstep, pixels_x, pixels_y, bhspin, Rout, Rstop);
-    trajectoryl = CalculateGeodesics(Xcaml, fovx, fovy, freq, maxnstep, pixels_x, pixels_y, bhspin, Rout, Rstop);
+    println("scale_factor = $scale_factor")
 
-    # Integrate the emission along the geodesics
-    println("Integrating emission along geodesics...")
-    Imageh = IpoleGeoIntensityIntegration(trajectoryh, freq, pixels_x, pixels_y, scale_factor, bhspin, data)
-    Imagel = IpoleGeoIntensityIntegration(trajectoryl, freq, pixels_x, pixels_y, scale_factor, bhspin, data)
+    # --- Internal Helper Function (The New Algorithm) ---
+    function trace_image(Xcamera, description)
+        println("Calculating $description...")
+        
+        # Initialize Image buffer
+        local_img = zeros(Float64, pixels_x, pixels_y)
+        
+        # Setup Progress Meter
+        p = Progress(
+            pixels_x * pixels_y; 
+            desc = "Raytracing $description...", 
+            showspeed = true, 
+            barlen = 30
+        )
+        
+        # Raytracing Loop
+        Threads.@threads for i in 0:(pixels_x - 1)
+            tid = Threads.threadid()
+            for j in 0:(pixels_y - 1)
+                # Initialize trajectory vector for this pixel
+                traj = Vector{OfTraj}()
+                sizehint!(traj, maxnstep)
+                
+                # Calculate Geodesic
+                nstep = get_pixel(traj, i, j, Xcamera, maxnstep, fovx, fovy, freq_unitless, pixels_x, pixels_y, bhspin, Rh, Rout, Rstop, xoff, yoff) 
+                
+                # Resize and Integrate
+                resize!(traj, nstep)
+                integrate_emission!(traj, nstep, local_img, i + 1, j + 1, freq, bhspin, data)
+                
+                # Update Progress
+                # ProgressMeter.next!(
+                #     p; 
+                #     showvalues = [
+                #         (:thread_id, tid), 
+                #         (:pixel, "($i, $j)"), 
+                #         (:total_done, "$(i*pixels_y + j)/$(pixels_x * pixels_y)")
+                #     ]
+                # )
+            end
+        end
+        finish!(p)
+        
+        # Apply Scaling
+        local_img *= freq^3
+        return local_img
+    end
 
-    #deallocate trajectories to save memory
-    trajectoryh = nothing
-    trajectoryl = nothing
-    dI_dθo = (Imageh - Imagel) / (2 * h)  # Finite difference approximation
+    # --- Execution ---
+    
+    # 1. Calculate High Trajectory/Image
+    Imageh = trace_image(Xcamh, "High (+h)")
+    
+    # 2. Calculate Low Trajectory/Image
+    Imagel = trace_image(Xcaml, "Low (-h)")
 
-    #calculate the image at the central value
-    println("Calculating central image...")
-    Xcam = MVec4(camera_position(ro, th, phi, bhspin, Rout))
-    trajectory = CalculateGeodesics(Xcam, fovx, fovy, freq, maxnstep, pixels_x, pixels_y, bhspin, Rout, Rstop);
-    Imagec = IpoleGeoIntensityIntegration(trajectory, freq, pixels_x, pixels_y, scale_factor, bhspin, data);
-    trajectory = nothing
+    # 3. Calculate Finite Difference
+    dI_dθo = (Imageh - Imagel) / (2 * h)
+
+    # 4. Calculate Central Image
+    Imagec = trace_image(Xcamc, "Central")
+
     return dI_dθo, Imagec
 end
 
@@ -183,8 +234,14 @@ function armijo_line_search!(cost_func, compute_gradients!, x, grad, direction, 
     f0 = cost_func(x, args...)
     df0 = dot(grad, direction)
     println("grad = $grad, direction = $direction")
-
     println("  Line search: f0=$f0, df0=$df0, initial_step=$initial_step")
+
+    #Tell if the direction is increasing or decreasing
+    if(sign(direction[1]) == sign(grad[1]))
+        println("  \e[34mDirection for θo is decreasing the cost function\e[0m")
+    else
+        println("  \e[34mDirection for θo is decreasing the cost function\e[0m")
+    end
     
     # If direction is not a descent direction, return current point
     if df0 >= 0

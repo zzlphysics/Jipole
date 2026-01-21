@@ -238,22 +238,22 @@ function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin
         d2thdx22 = 0.0
         dthdx22 = dthdx2 * dthdx2
     elseif(MODEL == "iharm")
-        E = exp(mks_smooth * (startx[2] - X[2]))
-        dthG = π * (1.0 + (1.0 - hslope) * cos(2.0 * π * X[3]))
+        E = exp(params.mks_smooth * (params.startx[2] - X[2]))
+        dthG = π * (1.0 + (1.0 - params.hslope) * cos(2.0 * π * X[3]))
         y = 2 * X[3] - 1.0
-        dthJ = 2 * poly_norm * (1 + (y/poly_xt)^poly_alpha)
-        dthG2 = -2 * π * π * (1.0 - hslope) * sin(2.0 * π * X[3])
-        dthJ2 = 4 * poly_norm * poly_alpha * (y/poly_xt)^(poly_alpha - 1) / poly_xt
+        dthJ = 2 * params.poly_norm * (1 + (y/params.poly_xt)^params.poly_alpha)
+        dthG2 = -2 * π * π * (1.0 - params.hslope) * sin(2.0 * π * X[3])
+        dthJ2 = 4 * params.poly_norm * params.poly_alpha * (y/params.poly_xt)^(params.poly_alpha - 1) / params.poly_xt
         dthdx2 = (1.0 - E) * dthG + E * dthJ
         d2thdx22 = (1.0 - E) * dthG2 + E * dthJ2
         dthdx22 = dthdx2 * dthdx2
         
-        thG = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
-        thJ = poly_norm * y* (1. + ((y / poly_xt)^poly_alpha) / (poly_alpha + 1.)) + 0.5 * π;
+        thG = π * X[3] + ((1. - params.hslope) / 2.) * sin(2. * π * X[3]);
+        thJ = params.poly_norm * y* (1. + ((y / params.poly_xt)^params.poly_alpha) / (params.poly_alpha + 1.)) + 0.5 * π;
 
-        dthdx1 = -mks_smooth * exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG);
-        d2thdx12 = mks_smooth^2 * exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG);
-        d2thdx1_2 = -2.0 * mks_smooth * exp(mks_smooth * (startx[2] - X[2])) * (dthJ - dthG);
+        dthdx1 = -params.mks_smooth * exp(params.mks_smooth * (params.startx[2] - X[2])) * (thJ - thG);
+        d2thdx12 = params.mks_smooth^2 * exp(params.mks_smooth * (params.startx[2] - X[2])) * (thJ - thG);
+        d2thdx1_2 = -2.0 * params.mks_smooth * exp(params.mks_smooth * (params.startx[2] - X[2])) * (dthJ - dthG);
 
     else
         error("Unknown model: $MODEL")
@@ -269,11 +269,11 @@ function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin
     s2th = 2.0 * sth * cth
     c2th = 2.0 * cth2 - 1.0
 
-    a2 = bhspin * bhspin
+    a2 = params.a * params.a
     a2sth2 = a2 * sth2
     a2cth2 = a2 * cth2
-    a3 = a2 * bhspin
-    a4 = a3 * bhspin
+    a3 = a2 * params.a
+    a4 = a3 * params.a
     a4cth4 = a4 * cth4
 
     rho2 = r2 + a2cth2
@@ -292,12 +292,12 @@ function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin
     lconn[1, 1, 1] = 2.0 * r1 * fac1_rho23
     lconn[1, 1, 2] = r1 * (2.0 * r1 + rho2) * fac1_rho23
     lconn[1, 1, 3] = -a2 * r1 * s2th * dthdx2 * irho22
-    lconn[1, 1, 4] = -2.0 * bhspin * r1sth2 * fac1_rho23
+    lconn[1, 1, 4] = -2.0 * params.a * r1sth2 * fac1_rho23
 
     lconn[1, 2, 1] = lconn[1, 1, 2]
     lconn[1, 2, 2] = 2.0 * r2 * (r4 + r1 * fac1 - a4cth4) * irho23
     lconn[1, 2, 3] = -a2 * r2 * s2th * dthdx2 * irho22
-    lconn[1, 2, 4] = bhspin * r1 * (-r1 * (r3 + 2 * fac1) + a4cth4) * sth2 * irho23
+    lconn[1, 2, 4] = params.a * r1 * (-r1 * (r3 + 2 * fac1) + a4cth4) * sth2 * irho23
 
     lconn[1, 3, 1] = lconn[1, 1, 3]
     lconn[1, 3, 2] = lconn[1, 2, 3]
@@ -312,12 +312,12 @@ function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin
     lconn[2, 1, 1] = fac3 * fac1 / (r1 * rho23)
     lconn[2, 1, 2] = fac1 * (-2.0 * r1 + a2sth2) * irho23
     lconn[2, 1, 3] = 0.0
-    lconn[2, 1, 4] = -bhspin * sth2 * fac3 * fac1 / (r1 * rho23)
+    lconn[2, 1, 4] = -params.a * sth2 * fac3 * fac1 / (r1 * rho23)
 
     lconn[2, 2, 1] = lconn[2, 1, 2]
     lconn[2, 2, 2] = (r4 * (-2.0 + r1) * (1.0 + r1) + a2 * (a2 * r1 * (1.0 + 3.0 * r1) * cth4 + a4 * cth4 * cth2 + r3 * sth2 + r1 * cth2 * (2.0 * r1 + 3.0 * r3 - a2sth2))) * irho23
     lconn[2, 2, 3] = -a2 * dthdx2 * s2th / fac2
-    lconn[2, 2, 4] = bhspin * sth2 * (a4 * r1 * cth4 + r2 * (2 * r1 + r3 - a2sth2) + a2cth2 * (2.0 * r1 * (-1.0 + r2) + a2sth2)) * irho23
+    lconn[2, 2, 4] = params.a * sth2 * (a4 * r1 * cth4 + r2 * (2 * r1 + r3 - a2sth2) + a2cth2 * (2.0 * r1 * (-1.0 + r2) + a2sth2)) * irho23
 
     lconn[2, 3, 1] = lconn[2, 1, 3]
     lconn[2, 3, 2] = lconn[2, 2, 3]
@@ -332,12 +332,12 @@ function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin
     lconn[3, 1, 1] = -a2 * r1 * s2th * irho23_dthdx2
     lconn[3, 1, 2] = r1 * lconn[3, 1, 1]
     lconn[3, 1, 3] = 0.0
-    lconn[3, 1, 4] = bhspin * r1 * (a2 + r2) * s2th * irho23_dthdx2
+    lconn[3, 1, 4] = params.a * r1 * (a2 + r2) * s2th * irho23_dthdx2
 
     lconn[3, 2, 1] = lconn[3, 1, 2]
     lconn[3, 2, 2] = r2 * lconn[3, 1, 1]
     lconn[3, 2, 3] = r2 * irho2
-    lconn[3, 2, 4] = (bhspin * r1 * cth * sth * (r3 * (2.0 + r1) + a2 * (2.0 * r1 * (1.0 + r1) * cth2 + a2 * cth4 + 2 * r1sth2))) * irho23_dthdx2
+    lconn[3, 2, 4] = (params.a * r1 * cth * sth * (r3 * (2.0 + r1) + a2 * (2.0 * r1 * (1.0 + r1) * cth2 + a2 * cth4 + 2 * r1sth2))) * irho23_dthdx2
 
     lconn[3, 3, 1] = lconn[3, 1, 3]
     lconn[3, 3, 2] = lconn[3, 2, 3]
@@ -349,25 +349,25 @@ function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin
     lconn[3, 4, 3] = lconn[3, 3, 4]
     lconn[3, 4, 4] = -cth * sth * (rho23 + a2sth2 * rho2 * (r1 * (4.0 + r1) + a2cth2) + 2.0 * r1 * a4 * sth4) * irho23_dthdx2
 
-    lconn[4, 1, 1] = bhspin * fac1_rho23
+    lconn[4, 1, 1] = params.a * fac1_rho23
     lconn[4, 1, 2] = r1 * lconn[4, 1, 1]
-    lconn[4, 1, 3] = -2.0 * bhspin * r1 * cth * dthdx2 / (sth * rho22)
+    lconn[4, 1, 3] = -2.0 * params.a * r1 * cth * dthdx2 / (sth * rho22)
     lconn[4, 1, 4] = -a2sth2 * fac1_rho23
 
     lconn[4, 2, 1] = lconn[4, 1, 2]
-    lconn[4, 2, 2] = bhspin * r2 * fac1_rho23
-    lconn[4, 2, 3] = -2 * bhspin * r1 * (a2 + 2 * r1 * (2.0 + r1) + a2 * c2th) * cth * dthdx2 / (sth * fac2 * fac2)
+    lconn[4, 2, 2] = params.a * r2 * fac1_rho23
+    lconn[4, 2, 3] = -2 * params.a * r1 * (a2 + 2 * r1 * (2.0 + r1) + a2 * c2th) * cth * dthdx2 / (sth * fac2 * fac2)
     lconn[4, 2, 4] = r1 * (r1 * rho22 - a2sth2 * fac1) * irho23
 
     lconn[4, 3, 1] = lconn[4, 1, 3]
     lconn[4, 3, 2] = lconn[4, 2, 3]
-    lconn[4, 3, 3] = -bhspin * r1 * dthdx22 * irho2
+    lconn[4, 3, 3] = -params.a * r1 * dthdx22 * irho2
     lconn[4, 3, 4] = dthdx2 * (0.25 * fac2 * fac2 * cth / sth + a2 * r1 * s2th) * irho22
 
     lconn[4, 4, 1] = lconn[4, 1, 4]
     lconn[4, 4, 2] = lconn[4, 2, 4]
     lconn[4, 4, 3] = lconn[4, 3, 4]
-    lconn[4, 4, 4] = (-bhspin * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23
+    lconn[4, 4, 4] = (-params.a * r1sth2 * rho22 + a3 * sth4 * fac1) * irho23
 
 end
 
@@ -611,7 +611,6 @@ function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, step_max:
             MVec4(undef)  #This is dK_da for the derivatives in autodiff
         ))
     end
-    nstep -= 1
 
 
     return nstep

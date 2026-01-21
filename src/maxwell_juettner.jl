@@ -27,7 +27,7 @@ function maxwell_juettner_dexter_I(Ne, ν, θe, B, θ)
     return j
 end
 function maxwell_juettner_leung_I(Ne, ν, θe, B, θ)
-    K2 = besselk(2, 1. / θe)
+    K2 = max(besselk(2, 1. / θe), SMALL)
     nuc = EE * B / (2. * π * ME * CL)
     nus = (2. / 9.) * nuc * θe * θe * sin(θ)
     if (ν > 1.e12 * nus)

@@ -1,7 +1,7 @@
 
 const MODEL = "iharm" # Model type: "analytic", "thin_disk", "iharm"
 
-
+println("Using model: $MODEL, change src/set_globals.jl to modify.")
 # Mass of the black hole in solar masses
 const MBH = 6.2e9#4.063e6 #6.2e9
 const L_unit = GNEWT * MBH * MSUN / CL^2  # Length unit in gravitational radius (Rg)

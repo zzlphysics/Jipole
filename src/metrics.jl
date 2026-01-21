@@ -38,23 +38,23 @@ function gcov_func!(X::MVec4, bhspin::Float64, gcov, R0::Float64 = 0.0)
     tfac = 1.
     rfac = r - R0
     if(MODEL == "iharm")
-        if(METRIC == "MKS")
-            hfac = π * (1.0 + (1.0 - hslope) * cos(2.0 * π * X[3]))
+        if(params.metric == METRIC_MKS)
+            hfac = π * (1.0 + (1.0 - params.hslope) * cos(2.0 * π * X[3]))
             dth_dX2 = 0.0
-        elseif(METRIC == "FMKS")
+        elseif(params.metric == METRIC_FMKS)
             # FMKS metric
-            E = exp(mks_smooth * (startx[2] - X[2]))
-            dthG = π * (1.0 + (1.0 - hslope) * cos(2.0 * π * X[3]))
+            E = exp(params.mks_smooth * (params.startx[2] - X[2]))
+            dthG = π * (1.0 + (1.0 - params.hslope) * cos(2.0 * π * X[3]))
             y = 2 * X[3] - 1.0
-            dthJ = 2 * poly_norm * (1 + (y/poly_xt)^poly_alpha)
-            dthG2 = -2 * π * π * (1.0 - hslope) * sin(2.0 * π * X[3])
-            dthJ2 = 4 * poly_norm * poly_alpha * (y/poly_xt)^(poly_alpha - 1) / poly_xt
+            dthJ = 2 * params.poly_norm * (1 + (y/params.poly_xt)^params.poly_alpha)
+            dthG2 = -2 * π * π * (1.0 - params.hslope) * sin(2.0 * π * X[3])
+            dthJ2 = 4 * params.poly_norm * params.poly_alpha * (y/params.poly_xt)^(params.poly_alpha - 1) / params.poly_xt
             hfac = (1.0 - E) * dthG + E * dthJ
-            thG = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
-            thJ = poly_norm * y* (1. + ((y / poly_xt)^poly_alpha) / (poly_alpha + 1.)) + 0.5 * π;
-            dth_dX2 = -mks_smooth * exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG)
+            thG = π * X[3] + ((1. - params.hslope) / 2.) * sin(2. * π * X[3]);
+            thJ = params.poly_norm * y* (1. + ((y / params.poly_xt)^params.poly_alpha) / (params.poly_alpha + 1.)) + 0.5 * π;
+            dth_dX2 = -params.mks_smooth * exp(params.mks_smooth * (params.startx[2] - X[2])) * (thJ - thG)
         else
-            error("Unknown METRIC type: $METRIC")
+            error("Unknown METRIC type: $(params.metric)")
         end
     elseif(MODEL == "analytic" || MODEL == "thin_disk")
         hfac = π
@@ -63,12 +63,12 @@ function gcov_func!(X::MVec4, bhspin::Float64, gcov, R0::Float64 = 0.0)
     pfac = 1.
     gcov[1, 1] = (-1. + 2. * r / rho2) * tfac * tfac
     gcov[1, 2] = (2. * r / rho2) * tfac * rfac
-    gcov[1, 4] = (-2. * bhspin * r * s2 / rho2) * tfac * pfac
+    gcov[1, 4] = (-2. * params.a * r * s2 / rho2) * tfac * pfac
 
     gcov[2, 1] = gcov[1, 2]
     gcov[2, 2] = (1. + 2. * r / rho2) * rfac * rfac
     gcov[2, 3] = rho2 * dth_dX2 * hfac
-    gcov[2, 4] = (-bhspin * s2 * (1. + 2. * r / rho2)) * rfac * pfac
+    gcov[2, 4] = (-params.a * s2 * (1. + 2. * r / rho2)) * rfac * pfac
     
     gcov[3,2] = gcov[2,3]
     gcov[3, 3] = rho2 * hfac * hfac
@@ -76,7 +76,7 @@ function gcov_func!(X::MVec4, bhspin::Float64, gcov, R0::Float64 = 0.0)
     gcov[4, 1] = gcov[1, 4]
     gcov[4, 2] = gcov[2, 4]
     gcov[4, 4] =
-        s2 * (rho2 + bhspin * bhspin * s2 * (1. + 2. * r / rho2)) * pfac * pfac
+        s2 * (rho2 + params.a * params.a * s2 * (1. + 2. * r / rho2)) * pfac * pfac
 
 
 
@@ -110,23 +110,23 @@ function gcov_func(X, bhspin, R0::Float64 = 0.0)
     tfac = 1.
     rfac = r - R0
     if(MODEL == "iharm")
-        if(METRIC == "MKS")
-            hfac = π * (1.0 + (1.0 - hslope) * cos(2.0 * π * X[3]))
+        if(params.metric == METRIC_MKS)
+            hfac = π * (1.0 + (1.0 - params.hslope) * cos(2.0 * π * X[3]))
             dth_dX2 = 0.0
-        elseif(METRIC == "FMKS")
+        elseif(params.metric == METRIC_FMKS)
             # FMKS metric
-            E = exp(mks_smooth * (startx[2] - X[2]))
-            dthG = π * (1.0 + (1.0 - hslope) * cos(2.0 * π * X[3]))
+            E = exp(params.mks_smooth * (params.startx[2] - X[2]))
+            dthG = π * (1.0 + (1.0 - params.hslope) * cos(2.0 * π * X[3]))
             y = 2 * X[3] - 1.0
-            dthJ = 2 * poly_norm * (1 + (y/poly_xt)^poly_alpha)
-            dthG2 = -2 * π * π * (1.0 - hslope) * sin(2.0 * π * X[3])
-            dthJ2 = 4 * poly_norm * poly_alpha * (y/poly_xt)^(poly_alpha - 1) / poly_xt
+            dthJ = 2 * params.poly_norm * (1 + (y/params.poly_xt)^params.poly_alpha)
+            dthG2 = -2 * π * π * (1.0 - params.hslope) * sin(2.0 * π * X[3])
+            dthJ2 = 4 * params.poly_norm * params.poly_alpha * (y/params.poly_xt)^(params.poly_alpha - 1) / params.poly_xt
             hfac = (1.0 - E) * dthG + E * dthJ
-            thG = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
-            thJ = poly_norm * y* (1. + ((y / poly_xt)^poly_alpha) / (poly_alpha + 1.)) + 0.5 * π;
-            dth_dX2 = -mks_smooth * exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG)
+            thG = π * X[3] + ((1. - params.hslope) / 2.) * sin(2. * π * X[3]);
+            thJ = params.poly_norm * y* (1. + ((y / params.poly_xt)^params.poly_alpha) / (params.poly_alpha + 1.)) + 0.5 * π;
+            dth_dX2 = -params.mks_smooth * exp(params.mks_smooth * (params.startx[2] - X[2])) * (thJ - thG)
         else
-            error("Unknown METRIC type: $METRIC")
+            error("Unknown METRIC type: $(params.metric)")
         end
     elseif(MODEL == "analytic" || MODEL == "thin_disk")
         hfac = π
@@ -135,12 +135,12 @@ function gcov_func(X, bhspin, R0::Float64 = 0.0)
     pfac = 1.
     gcov[1, 1] = (-1. + 2. * r / rho2) * tfac * tfac
     gcov[1, 2] = (2. * r / rho2) * tfac * rfac
-    gcov[1, 4] = (-2. * bhspin * r * s2 / rho2) * tfac * pfac
+    gcov[1, 4] = (-2. * params.a * r * s2 / rho2) * tfac * pfac
 
     gcov[2, 1] = gcov[1, 2]
     gcov[2, 2] = (1. + 2. * r / rho2) * rfac * rfac
     gcov[2, 3] = rho2 * dth_dX2 * hfac
-    gcov[2, 4] = (-bhspin * s2 * (1. + 2. * r / rho2)) * rfac * pfac
+    gcov[2, 4] = (-params.a * s2 * (1. + 2. * r / rho2)) * rfac * pfac
     
     gcov[3,2] = gcov[2,3]
     gcov[3, 3] = rho2 * hfac * hfac
@@ -148,14 +148,14 @@ function gcov_func(X, bhspin, R0::Float64 = 0.0)
     gcov[4, 1] = gcov[1, 4]
     gcov[4, 2] = gcov[2, 4]
     gcov[4, 4] =
-        s2 * (rho2 + bhspin * bhspin * s2 * (1. + 2. * r / rho2)) * pfac * pfac
+        s2 * (rho2 + params.a * params.a * s2 * (1. + 2. * r / rho2)) * pfac * pfac
 
 
 
     # Assert if the diagonal elements are zero
     if gcov[1, 1] == 0 || gcov[2, 2] == 0 || gcov[3, 3] == 0 || gcov[4, 4] == 0
         @error "Singular gcov encountered in gcov_func"
-        println("sth $sth, cth $cth, r $r, a $bhspin, rho2 $rho2, tfac $tfac, rfac $rfac, hfac $hfac, pfac $pfac")
+        println("sth $sth, cth $cth, r $r, a $(params.a), rho2 $rho2, tfac $tfac, rfac $rfac, hfac $hfac, pfac $pfac")
         println("X = $X")
         println("th = $th")
         print_matrix("gcov", gcov)

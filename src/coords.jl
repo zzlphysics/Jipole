@@ -168,11 +168,11 @@ function set_dxdX(X)
     if(MODEL == "analytic" || MODEL == "thin_disk")
         dxdX[3,3] = π
     elseif(MODEL == "iharm")
-        if(METRIC == "MKS")
-            dxdX[3,3] = π + (1 - hslope) * π * cos(2*π*X[3])
-        elseif(METRIC == "FMKS")
-            dxdX[3, 2] = -exp(mks_smooth * (startx[2] - X[2])) * mks_smooth * (π/2 - π*X[3] +poly_norm * (2*X[3] - 1) * (1 + ((-1 + 2*X[3])/poly_xt)^poly_alpha / (1 + poly_alpha)) - 0.5 * (1 - hslope) * sin(2*π*X[3]))
-            dxdX[3, 3] = π + (1 - hslope) * π * cos(2*π*X[3]) +exp(mks_smooth * (startx[2] - X[2])) * (-π +2 * poly_norm * (1 + ((2*X[3]-1)/poly_xt)^poly_alpha / (poly_alpha + 1)) +(2 * poly_alpha * poly_norm * (2*X[3]-1) * ((2*X[3]-1)/poly_xt)^(poly_alpha-1)) / ((1 + poly_alpha) * poly_xt) -(1 - hslope) * π * cos(2*π*X[3]))
+        if(params.metric == METRIC_MKS)
+            dxdX[3,3] = π + (1 - params.hslope) * π * cos(2*π*X[3])
+        elseif(params.metric == METRIC_FMKS)
+            dxdX[3, 2] = -exp(params.mks_smooth * (params.startx[2] - X[2])) * params.mks_smooth * (π/2 - π*X[3] +params.poly_norm * (2*X[3] - 1) * (1 + ((-1 + 2*X[3])/params.poly_xt)^params.poly_alpha / (1 + params.poly_alpha)) - 0.5 * (1 - params.hslope) * sin(2*π*X[3]))
+            dxdX[3, 3] = π + (1 - params.hslope) * π * cos(2*π*X[3]) +exp(params.mks_smooth * (params.startx[2] - X[2])) * (-π +2 * params.poly_norm * (1 + ((2*X[3]-1)/params.poly_xt)^params.poly_alpha / (params.poly_alpha + 1)) +(2 * params.poly_alpha * params.poly_norm * (2*X[3]-1) * ((2*X[3]-1)/params.poly_xt)^(params.poly_alpha-1)) / ((1 + params.poly_alpha) * params.poly_xt) -(1 - params.hslope) * π * cos(2*π*X[3]))
         else
             error("Unknown METRIC type: $METRIC")
         end
@@ -257,15 +257,15 @@ function bl_coord(X, R0::Float64 = 0.0)
     if(MODEL == "analytic" || MODEL == "thin_disk")
         th = π *X[3]
     elseif(MODEL == "iharm")
-        if(METRIC == "FMKS")
-            thG = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
+        if(params.metric == METRIC_FMKS)
+            thG = π * X[3] + ((1. - params.hslope) / 2.) * sin(2. * π * X[3]);
             y = 2 * X[3] - 1.;
-            thJ = poly_norm * y* (1. + ((y / poly_xt)^poly_alpha) / (poly_alpha + 1.)) + 0.5 * π;
-            th = thG + exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG); 
-        elseif(METRIC == "MKS")
-            th = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
+            thJ = params.poly_norm * y* (1. + ((y / params.poly_xt)^params.poly_alpha) / (params.poly_alpha + 1.)) + 0.5 * π;
+            th = thG + exp(params.mks_smooth * (params.startx[2] - X[2])) * (thJ - thG); 
+        elseif(params.metric == METRIC_MKS)
+            th = π * X[3] + ((1. - params.hslope) / 2.) * sin(2. * π * X[3]);
         else
-            error("Unknown METRIC type: $METRIC")
+            error("Unknown METRIC type: $(params.metric)")
         end
     end
     return r, th
@@ -282,15 +282,15 @@ function bl_coord!(rt, X, R0::Float64 = 0.0)
     if(MODEL == "analytic" || MODEL == "thin_disk")
         rt[2] = π *X[3]
     elseif(MODEL == "iharm")
-        if(METRIC == "FMKS")
-            thG = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
+        if(params.metric == METRIC_FMKS)
+            thG = π * X[3] + ((1. - params.hslope) / 2.) * sin(2. * π * X[3]);
             y = 2 * X[3] - 1.;
-            thJ = poly_norm * y* (1. + ((y / poly_xt)^poly_alpha) / (poly_alpha + 1.)) + 0.5 * π;
-            rt[2] = thG + exp(mks_smooth * (startx[2] - X[2])) * (thJ - thG); 
-        elseif(METRIC == "MKS")
-            rt[2] = π * X[3] + ((1. - hslope) / 2.) * sin(2. * π * X[3]);
+            thJ = params.poly_norm * y* (1. + ((y / params.poly_xt)^params.poly_alpha) / (params.poly_alpha + 1.)) + 0.5 * π;
+            rt[2] = thG + exp(params.mks_smooth * (params.startx[2] - X[2])) * (thJ - thG); 
+        elseif(params.metric == METRIC_MKS)
+            rt[2] = π * X[3] + ((1. - params.hslope) / 2.) * sin(2. * π * X[3]);
         else
-            error("Unknown METRIC type: $METRIC")
+            error("Unknown METRIC type: $(params.metric)")
         end
     end
 end
