@@ -1,10 +1,18 @@
 
 include("../metrics.jl")
 
+mutable struct GlobalParams
+    a::Float64
+    Rout::Float64
+    cstartx::MVector{4,Float64}
+    cstopx::MVector{4,Float64}
+end
+
 f::Float64 = 1.8
 ch_mu = Float64[]
 ch_I = Float64[]
 ch_delta = Float64[]
+
 
 
 
@@ -27,39 +35,6 @@ function radiating_region(X::MVec4, Rh::Float64)
     return false
 end
 
-# function get_model_fourvel!(X::MVec4, Kcon::MVec4, Ucon::MVec4, Ucov::MVec4, Bcon::MVec4, Bcov::MVec4)
-#     """
-#     Computes the model four-velocity and magnetic field in internal coordinates.
-#     Parameters:
-#     @X: Position vector in internal coordinates.
-#     @Kcon: Covariant 4-vector of the photon in internal coordinates.
-#     @Ucon: Output covariant 4-velocity of the fluid in internal coordinates.
-#     @Ucov: Output contravariant 4-velocity of the fluid in internal coordinates.
-#     @Bcon: Output covariant 4-vector of the magnetic field in internal coordinates.
-#     @Bcov: Output contravariant 4-vector of the magnetic field in internal coordinates.
-#     """
-#     # Compute metric in native coordinates
-#     gcov = gcov_func(X)
-#     # Find r, th in KS/BL coordinates
-#     r,_ = bl_coord(X)
-
-#     omega::Float64 = 0.0
-#     T::Float64 = 0.0
-#     # Get the model four-velocity and magnetic field
-#     T, omega = thindisk_vals(r)
-#     Ucon[1] = sqrt(-1. / (gcov[1, 1] + 2. * gcov[1, 4] * omega + gcov[4, 4] * omega * omega))
-#     Ucon[2] = 0.0
-#     Ucon[3] = 0.0
-#     Ucon[4] = omega * Ucon[1]
-
-#     copyto!(Ucov, flip_index(Ucon, gcov))
-
-#     # Calculate the polarization vector in KS coordinates
-#     calc_polvec!(X, Kcon, a, Bcon)
-
-#     # Flip B to covariant coordinates
-#     copyto!(Bcov, flip_index(Bcon, gcov))
-# end
 
 function GetTDBoundaryCondition(X::MVec4, Kcon::MVec4, a::Float64, Rh::Float64)
     r, _ = bl_coord(X)

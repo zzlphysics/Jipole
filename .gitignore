@@ -6,6 +6,14 @@ src/models/iharm3dDumps/sample_dump_SANE_a+0.94_MKS_0900.h5
 # BUT keep the license
 !License.txt
 
+/notebooks/*
+#except for the following notebooks: Autodiff_GRMHD.ipynb Autodiff.ipynb ComputeGeodesics.ipynb GenerateImageGRMHD.ipynb Generateimages.ipynb
+!notebooks/Autodiff_GRMHD.ipynb
+!notebooks/Autodiff.ipynb
+!notebooks/ComputeGeodesics.ipynb
+!notebooks/GenerateImageGRMHD.ipynb
+!notebooks/Generateimages.ipynb
+
 # Generated figures
 *.png
 

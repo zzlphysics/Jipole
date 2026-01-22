@@ -1,5 +1,13 @@
 include("../metrics.jl")
 
+# Holds the physics/metric parameters (formerly C globals)
+mutable struct GlobalParams
+    a::Float64
+    Rout::Float64
+    cstartx::MVector{4,Float64}
+    cstopx::MVector{4,Float64}
+end
+
 #Model parameters (adjust spin in main.jl)
 const A = 1.e6
 const α_analytic = -0.0
