@@ -2,7 +2,7 @@
 
 # Jipole
 
-A Julia-based radiative transfer code for curved spacetimes with automatic differentiation capabilities. More details available on [the paper published in ApJ](https://iopscience.iop.org/article/10.3847/1538-4357/ae16a0)
+A Julia-based radiative transfer code for curved spacetimes with automatic differentiation capabilities. More details available on [the paper published in ApJ](https://iopscience.iop.org/article/10.3847/1538-4357/ae16a0).
 
 ## Overview
 
@@ -121,6 +121,7 @@ The black hole spin parameter can be adjusted directly within the Jupyter notebo
 
 
 Pedro Naethe Motta at pedronaethemotta [at] usp [dot] br
+
 
 
 
