@@ -232,32 +232,79 @@ function get_connection_analytic!(X::AbstractVector{T}, lconn::TTensor3D, bhspin
     r4 = r3 * r1
     r,th = bl_coord(X)
 
+
     if(MODEL == "analytic" || MODEL == "thin_disk")
         th = π * X[3]
         dthdx2 = π
         d2thdx22 = 0.0
         dthdx22 = dthdx2 * dthdx2
     elseif(MODEL == "iharm")
-        E = exp(params.mks_smooth * (params.startx[2] - X[2]))
-        dthG = π * (1.0 + (1.0 - params.hslope) * cos(2.0 * π * X[3]))
-        y = 2 * X[3] - 1.0
-        dthJ = 2 * params.poly_norm * (1 + (y/params.poly_xt)^params.poly_alpha)
-        dthG2 = -2 * π * π * (1.0 - params.hslope) * sin(2.0 * π * X[3])
-        dthJ2 = 4 * params.poly_norm * params.poly_alpha * (y/params.poly_xt)^(params.poly_alpha - 1) / params.poly_xt
-        dthdx2 = (1.0 - E) * dthG + E * dthJ
-        d2thdx22 = (1.0 - E) * dthG2 + E * dthJ2
-        dthdx22 = dthdx2 * dthdx2
-        
-        thG = π * X[3] + ((1. - params.hslope) / 2.) * sin(2. * π * X[3]);
-        thJ = params.poly_norm * y* (1. + ((y / params.poly_xt)^params.poly_alpha) / (params.poly_alpha + 1.)) + 0.5 * π;
+        if(params.metric == METRIC_MKS)
+            th = π * X[3] + ((1.0 - params.hslope) / 2.0) * sin(2.0 * π * X[3])
+            dthdx2 = π + (1.0 - params.hslope) * π * cos(2.0 * π * X[3])
+            d2thdx22 = -2.0 * π^2 * (1.0 - params.hslope) * sin(2.0 * π * X[3])
+            dthdx22 = dthdx2 * dthdx2
 
-        dthdx1 = -params.mks_smooth * exp(params.mks_smooth * (params.startx[2] - X[2])) * (thJ - thG);
-        d2thdx12 = params.mks_smooth^2 * exp(params.mks_smooth * (params.startx[2] - X[2])) * (thJ - thG);
-        d2thdx1_2 = -2.0 * params.mks_smooth * exp(params.mks_smooth * (params.startx[2] - X[2])) * (dthJ - dthG);
-
+        elseif(params.metric == METRIC_FMKS)
+            error("FMKS metric is not currently supported in the analytic connection. Please use MKS metric for now.")
+            # Aliases for readability
+            x1 = X[2]
+            x2 = X[3]
+            h = params.hslope
+            pn = params.poly_norm
+            px = params.poly_xt
+            pa = params.poly_alpha
+            ms = params.mks_smooth
+            x10 = params.startx[2]
+            
+            # 1. Base MKS angle (thG) and its derivatives w.r.t x2
+            thG = π * x2 + ((1.0 - h) / 2.0) * sin(2.0 * π * x2)
+            thG_p = π + (1.0 - h) * π * cos(2.0 * π * x2)
+            thG_pp = -2.0 * π^2 * (1.0 - h) * sin(2.0 * π * x2)
+            
+            # 2. Jet angle (thJ) and its derivatives w.r.t x2
+            y = 2.0 * x2 - 1.0
+            u = y / px
+            
+            thJ = pn * y * (1.0 + (u^pa) / (pa + 1.0)) + 0.5 * π
+            thJ_p = 2.0 * pn * (1.0 + (u^pa) / (pa + 1.0)) + pn * y * (pa * u^(pa - 1.0)) / (pa + 1.0) * (2.0 / px)
+            thJ_pp = (8.0 * pn * pa) / (px * (pa + 1.0)) * u^(pa - 1.0) + (4.0 * pn * pa * (pa - 1.0) * y) / (px^2 * (pa + 1.0)) * u^(pa - 2.0)
+            
+            # 3. Radial modulation factor
+            f = exp(ms * (x10 - x1))
+            
+            # 4. Final theta and derivatives
+            th = thG + f * (thJ - thG)
+            dthdx2 = thG_p + f * (thJ_p - thG_p)
+            d2thdx22 = thG_pp + f * (thJ_pp - thG_pp)
+            dthdx22 = dthdx2 * dthdx2
+        else
+            error("Unknown METRIC type: $(params.metric)")
+        end
     else
         error("Unknown model: $MODEL")
     end
+    # elseif(MODEL == "iharm")
+    #     E = exp(params.mks_smooth * (params.startx[2] - X[2]))
+    #     dthG = π * (1.0 + (1.0 - params.hslope) * cos(2.0 * π * X[3]))
+    #     y = 2 * X[3] - 1.0
+    #     dthJ = 2 * params.poly_norm * (1 + (y/params.poly_xt)^params.poly_alpha)
+    #     dthG2 = -2 * π * π * (1.0 - params.hslope) * sin(2.0 * π * X[3])
+    #     dthJ2 = 4 * params.poly_norm * params.poly_alpha * (y/params.poly_xt)^(params.poly_alpha - 1) / params.poly_xt
+    #     dthdx2 = (1.0 - E) * dthG + E * dthJ
+    #     d2thdx22 = (1.0 - E) * dthG2 + E * dthJ2
+    #     dthdx22 = dthdx2 * dthdx2
+        
+    #     thG = π * X[3] + ((1. - params.hslope) / 2.) * sin(2. * π * X[3]);
+    #     thJ = params.poly_norm * y* (1. + ((y / params.poly_xt)^params.poly_alpha) / (params.poly_alpha + 1.)) + 0.5 * π;
+
+    #     dthdx1 = -params.mks_smooth * exp(params.mks_smooth * (params.startx[2] - X[2])) * (thJ - thG);
+    #     d2thdx12 = params.mks_smooth^2 * exp(params.mks_smooth * (params.startx[2] - X[2])) * (thJ - thG);
+    #     d2thdx1_2 = -2.0 * params.mks_smooth * exp(params.mks_smooth * (params.startx[2] - X[2])) * (dthJ - dthG);
+
+    # else
+    #     error("Unknown model: $MODEL")
+    # end
 
     sth = sin(th)
     cth = cos(th)
@@ -391,8 +438,8 @@ function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf
         #Use analytic connection
         get_connection_analytic!(X, lconn, bhspin)
     elseif(MODEL == "iharm")
-        get_connection(X, bhspin, lconn)
-        #get_connection_analytic!(X, lconn, bhspin)
+        #get_connection(X, bhspin, lconn)
+        get_connection_analytic!(X, lconn, bhspin)
 
     else
         error("Unknown model: $MODEL")
@@ -413,8 +460,8 @@ function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf
         #Use analytic connection
         get_connection_analytic!(Xhalf, lconn, bhspin)
     elseif(MODEL == "iharm")
-        get_connection(Xhalf, bhspin, lconn)
-        #get_connection_analytic!(Xhalf, lconn, bhspin)
+        #get_connection(Xhalf, bhspin, lconn)
+        get_connection_analytic!(Xhalf, lconn, bhspin)
 
     else
         error("Unknown model: $MODEL")
@@ -434,24 +481,24 @@ function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf
     end
 end
 
-const DEL = 1.e-7
-function get_connection(X::MVec4, bhspin::Float64, conn)
+const DEL = 1.e-6
+function get_connection(X::AbstractVector{T}, bhspin, conn::TTensor3D) where T
     """
     Returns the connection coefficients in Kerr-Schild coordinates using finite differences.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    tmp = Tensor3D(undef)
+    tmp = similar(conn)
     Xh = copy(X)
     Xl = copy(X)
-    gcov::MMat4 = MMat4(undef)
-    gcon::MMat4 = MMat4(undef)
-    fill!(gcov, 0.0)
-    gcov_func!(X, bhspin, gcov)
-    gcon_func!(gcov, gcon)
+    # gcov::MMat4 = MMat4(undef)
+    # gcon::MMat4 = MMat4(undef)
+    # fill!(gcov, 0.0)
+    # gcov_func!(X, bhspin, gcov)
+    # gcon_func!(gcov, gcon)
 
-    gh::MMat4 = MMat4(undef)
-    gl::MMat4 = MMat4(undef)
+    gcov = gcov_func(X, bhspin)
+    gcon = gcon_func(gcov)
     
     @inbounds for k in 1:NDIM
         Xh .= X
@@ -459,10 +506,8 @@ function get_connection(X::MVec4, bhspin::Float64, conn)
         Xh[k] += DEL
         Xl[k] -= DEL
 
-        fill!(gh, 0.0)
-        fill!(gl, 0.0)
-        gcov_func!(Xh, bhspin, gh)
-        gcov_func!(Xl, bhspin, gl)
+        gh = gcov_func(Xh, bhspin)
+        gl = gcov_func(Xl, bhspin)
 
 
 
@@ -512,12 +557,12 @@ function stepsize(X::MVec4, Kcon::MVec4, cstartx::MVec4, cstopx::MVec4, eps_ipol
     idlx3::Float64 = 0.0
     idlx4::Float64 = 0.0
     dl::Float64 = 0.0
-        
+
     
     if(true)
         deh::Float64 = min(abs(X[2] - cstartx[2]), 0.1)
         dlx2 = eps_ipole * (10 * deh) / (abs(Kcon[2]) + SMALL*SMALL)
-        cut::Float64 = 0.02
+        cut::Float64 = 0.002
         lx3::Float64 = cstopx[3] - cstartx[3]
         dpole::Float64 = min(abs(X[3] / lx3), abs((cstopx[3] - X[3]) / lx3))
         d2fac::Float64 = (dpole < cut) ? dpole / 3 : min(cut / 3 + (dpole - cut) * 10., 1)
@@ -540,7 +585,6 @@ function stepsize(X::MVec4, Kcon::MVec4, cstartx::MVec4, cstopx::MVec4, eps_ipol
 
         dl = 1.0 / (idlx2 + idlx3 + idlx4)
     end
-
     return dl
 end
 
@@ -591,7 +635,7 @@ function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, step_max:
     nstep = 1
     lconn = Tensor3D(undef)
     while (stop_backward_integration(X, Kcon, Rh, Rstop) == 0) && (nstep < step_max)
-        dl = stepsize(X, Kcon, cstartx, cstopx)
+        dl = stepsize(X, Kcon, params.cstartx, params.cstopx)
 
         traj[nstep].dl = dl * L_unit * HPL / (ME * CL^2)
 
@@ -611,8 +655,9 @@ function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, step_max:
             MVec4(undef)  #This is dK_da for the derivatives in autodiff
         ))
     end
-
-
+    # println("Pixel ($i, $j): Number of steps = $nstep")
+    # println("  Final position: r = $(exp(X[2])), θ = $(X[3]), ϕ = $(X[4])")
+    # error()
     return nstep
 end
 

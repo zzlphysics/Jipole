@@ -52,6 +52,9 @@ const METRIC_FMKS = 2
 const METRIC_MKS3 = 3
 const METRIC_EKS = 4
 
+const METRIC_MINKOWSKI = 5
+const METRIC_EMINKOWSKI = 6
+
 const ELECTRONS_TFLUID = 3  # Assuming 3 based on typical harm constants
 const USE_FIXED_TPTE = false # Set these defaults based on your simulation config
 const USE_MIXED_TPTE = true  # Set these defaults based on your simulation config
@@ -284,6 +287,7 @@ function read_header(filename::String)
             @printf(stderr, "Using Kerr-Schild coordinates with exponential radial coordinate\n")
         end
 
+
         # Read Metric Parameters
         if params.metric == METRIC_MKS3
             params.a = read(mks_group, "a")
@@ -321,7 +325,7 @@ function read_header(filename::String)
                 # Math Translation: 0.5*M_PI*1./(1. + 1./(poly_alpha + 1.)*1./pow(poly_xt, poly_alpha));
                 params.poly_norm = 0.5 * π * 1.0 / (1.0 + 1.0 / (params.poly_alpha + 1.0) * 1.0 / (params.poly_xt^params.poly_alpha))
                 
-                @printf(stderr, "MKS parameters poly_xt: %f poly_alpha: %f mks_smooth: %f poly_norm: %f\n", 
+                @printf(stderr, "FMKS parameters poly_xt: %f poly_alpha: %f mks_smooth: %f poly_norm: %f\n", 
                     params.poly_xt, params.poly_alpha, params.mks_smooth, params.poly_norm)
             end
         end
@@ -329,7 +333,7 @@ function read_header(filename::String)
     end # HDF5 file closes here
 
     # 9. Final Grid Calculations
-    params.rmax_geo = min(params.rmax_geo, params.Rout) # Simplified for this snippet
+    params.rmax_geo = min(params.rmax_geo, params.Rout)
     params.rmin_geo = max(params.rmin_geo, params.Rin)
 
     params.stopx = MVector{4, Float64}(
@@ -340,7 +344,7 @@ function read_header(filename::String)
     )
 
     params.cstartx = MVector{4, Float64}(0.0, 0.0, 0.0, 0.0)
-    params.cstopx  = MVector{4, Float64}(0.0, 0.0, cstopx_2, 2*π) # cstopx[2] logic from C switch
+    params.cstopx  = MVector{4, Float64}(0.0, 0.0, cstopx_2, 2*π) 
 
     # Special logic for MKS/logarithms if needed
     if params.metric != METRIC_BHACMKS && params.metric != METRIC_EKS
