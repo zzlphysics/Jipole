@@ -2,10 +2,9 @@
 src/models/iharm3dDumps/sample_dump_SANE_a+0.94_MKS_0900.h5
 # Ignore all txt by default
 *.txt
-
+!Tables/ch24_vals.txt
 # BUT keep the license
 !License.txt
-.ipynb_checkpoints/
 /notebooks/*
 #except for the following notebooks: Autodiff_GRMHD.ipynb Autodiff.ipynb ComputeGeodesics.ipynb GenerateImageGRMHD.ipynb Generateimages.ipynb
 !notebooks/Autodiff_GRMHD.ipynb
@@ -19,5 +18,4 @@ src/models/iharm3dDumps/sample_dump_SANE_a+0.94_MKS_0900.h5
 *.png
 
 # Jupyter noise
-notebooks/.ipynb_checkpoints/
-*.log
+**/.ipynb_checkpoints/
