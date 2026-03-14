@@ -19,3 +19,6 @@ src/models/iharm3dDumps/sample_dump_SANE_a+0.94_MKS_0900.h5
 
 # Jupyter noise
 **/.ipynb_checkpoints/
+
+# Windows alternate data streams
+**/*:Zone.Identifier

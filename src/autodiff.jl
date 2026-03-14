@@ -137,7 +137,7 @@ function AutoDiffGeoTrajEulerMethod!(traj, dI_dθo_out::Base.RefValue{Float64}, 
 
     dX_da = ForwardDiff.derivative(x -> camera_position(ro, θo, phi, x, Rout), bhspin)
     dK_da = ForwardDiff.derivative(x -> CalculateK(ro, θo, phi, i, j, nx, ny, fovx, fovy, x, freq, Rout), bhspin)
-
+    
     XK = MVector{9, Float64}(undef)
     XK[9] = bhspin
     #push first step to trajectory
@@ -350,6 +350,7 @@ function AutoDiffGeoTrajEulerMethod_GRMHD!(traj, dI_dθo_out::Base.RefValue{Floa
     #=========================================================USED FOR GEODESIC INTEGRATION=========================================================#
     #First set up the initial position and momentum of the specific pixel (i,j)
     Xcam = MVec4(camera_position(ro, θo, phi, bhspin, Rout))
+
     Kcon = MVec4(undef)
     X = MVec4(undef)
     Rh = 1 + sqrt(1. - bhspin * bhspin);  # Radius of the horizon
@@ -372,7 +373,6 @@ function AutoDiffGeoTrajEulerMethod_GRMHD!(traj, dI_dθo_out::Base.RefValue{Floa
     jac = MMatrix{4, 9, Float64}(undef)
     dX_dθo = ForwardDiff.derivative(x -> camera_position(ro, x, phi, bhspin, Rout), θo)
     dK_dθo = ForwardDiff.derivative(x -> CalculateK(ro, x, phi, i, j, nx, ny, fovx, fovy, bhspin, freq, Rout), θo)
-
     XK = MVector{9, Float64}(undef)
     XK[9] = bhspin
     
@@ -451,6 +451,7 @@ function AutoDiffGeoTrajEulerMethod_GRMHD!(traj, dI_dθo_out::Base.RefValue{Floa
         @error("AutoDiffGeoTrajEulerMethod: Maximum number of steps reached without meeting geodesics stop condition.")
         error()
     end
+    
 
     #=========================================================USED FOR INTENSITY INTEGRATION=========================================================#
     Xi = MVec4(undef)
@@ -480,6 +481,7 @@ function AutoDiffGeoTrajEulerMethod_GRMHD!(traj, dI_dθo_out::Base.RefValue{Floa
             Kconi[k] = traj[nstep].Kcon[k]
             Kconf[k] = traj[nstep - 1].Kcon[k]
         end
+
 
         if(MODEL == "thin_disk")
             if(thindisk_region(Xi, Xf))

@@ -559,10 +559,10 @@ function stepsize(X::MVec4, Kcon::MVec4, cstartx::MVec4, cstopx::MVec4, eps_ipol
     dl::Float64 = 0.0
 
     
-    if(true)
+    if(false)
         deh::Float64 = min(abs(X[2] - cstartx[2]), 0.1)
         dlx2 = eps_ipole * (10 * deh) / (abs(Kcon[2]) + SMALL*SMALL)
-        cut::Float64 = 0.002
+        cut::Float64 = 0.02
         lx3::Float64 = cstopx[3] - cstartx[3]
         dpole::Float64 = min(abs(X[3] / lx3), abs((cstopx[3] - X[3]) / lx3))
         d2fac::Float64 = (dpole < cut) ? dpole / 3 : min(cut / 3 + (dpole - cut) * 10., 1)

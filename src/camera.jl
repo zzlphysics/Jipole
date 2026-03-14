@@ -2,6 +2,32 @@ export camera_position
 
 include("../src/metrics.jl")
 
+
+function root_find_ad_safe(x, cstartx, cstopx)
+    # Run safe bisection to get the exact numerical root
+    # (This value is mathematically correct, but its AD gradient is 0)
+    x3_val = root_find(x, cstartx, cstopx)
+
+    # Reconstruct the state exactly at the root
+    x_eval = zeros(eltype(x), length(x))
+    x_eval[2] = log(x[2])
+    x_eval[4] = x[4]
+    x_eval[3] = x3_val
+
+    # Compute the local slope (derivative) using a tiny finite difference step
+    eps = 1e-7
+    x_eval_eps = copy(x_eval)
+    x_eval_eps[3] += eps
+    slope = (theta_func(x_eval_eps) - theta_func(x_eval)) / eps
+
+    # Attach the gradient using a single Newton step!
+    # Since x3_val is the exact root, `(theta_func(x_eval) - x[3])` is ~0.
+    # Therefore, the returned VALUE is exactly x3_val.
+    # But because x[3] is explicitly in the formula, AutoDiff traces it 
+    # and perfectly calculates the non-zero derivative
+    return x3_val - (theta_func(x_eval) - x[3]) / slope
+end
+
 function root_find(x, cstartx, cstopx)
     """
     Finds the root of the theta function using a bisection method.
@@ -150,7 +176,7 @@ function camera_position(cam_dist::Float64, cam_theta_angle, cam_phi_angle::Floa
         X[1] = 0.0
         X[2] = log(cam_dist)
         #X[3] = root_find(x, params.cstartx, params.cstopx)
-        X[3] = root_find_newton(x, params.cstartx, params.cstopx)
+        X[3] = root_find_ad_safe(x, params.cstartx, params.cstopx)
         #X[3] = cam_theta_angle / 180
         X[4] = cam_phi_angle/180 * π
         return X
