@@ -138,7 +138,6 @@ function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Fl
         end
 
         if !radiating_region(Xf, Rh)
-            nstep -= 1
             continue
         end
 
@@ -158,7 +157,6 @@ function integrate_emission!(traj::Vector{OfTraj}, nsteps::Int, Image::Matrix{Fl
         end
         ji = jf
         ki = kf
-        nstep -= 1
     end
     # if(I == 39 && J == 53)
     #     println("Final Intensity at pixel (39, 53): $(Intensity * freq^3)")

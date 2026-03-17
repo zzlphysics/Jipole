@@ -464,7 +464,7 @@ function AutoDiffGeoTrajEulerMethod_GRMHD!(traj, dI_dθo_out::Base.RefValue{Floa
     jac_I_X = MVec4(undef)
     jac_I_K = MVec4(undef)
 
-    step -= 1
+    #step -= 1
 
     for k in 1:NDIM
         Xi[k] = traj[step].X[k]
