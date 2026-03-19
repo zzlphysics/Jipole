@@ -5,35 +5,37 @@ using ProgressMeter
 
 function cost_func(ImageObs, ImageTest)
     """
-    Mean squared error cost function comparing each pixel's observed intensity with the calculated intensity.
+    Normalized Mean Squared Error (NMSE) between observed and test images.
     """
-    
     if length(ImageObs) != length(ImageTest)
         println("Length of ImageObs: $(length(ImageObs))")
         println("Length of ImageTest: $(length(ImageTest))")
         throw(ArgumentError("ImageObs and ImageTest must have the same length."))
     end
-    cost = 0.0
-    for i in eachindex(ImageObs, ImageTest)
-        cost += (ImageTest[i] - ImageObs[i])^2
-    end
-    return cost
+
+    # numerator: sum of squared differences
+    numerator = sum((ImageTest .- ImageObs).^2)
+
+    # denominator: sum of squared reference values
+    denominator = sum(ImageObs.^2)
+
+    nmse = numerator / denominator
+    return nmse
 end
 
 function GradientofCostFunction(ImageObs, ImageTest, dI_dθo, dI_da)
-
     if size(ImageObs) != size(ImageTest)
         throw(ArgumentError("ImageObs and ImageTest must have the same shape"))
     end
 
     ΔI = ImageTest .- ImageObs
+    denom = sum(ImageObs.^2)
 
-    grad_θo = 2 * sum(ΔI .* dI_dθo)
-    grad_a  = 2 * sum(ΔI .* dI_da)
+    grad_θo = 2 * sum(ΔI .* dI_dθo) / denom
+    grad_a  = 2 * sum(ΔI .* dI_da)  / denom
 
     return grad_θo, grad_a
 end
-
 
 function FiniteDifferencesθ(ro, th, phi, DXsize, DYsize, pixels_x, pixels_y, SourceD, freq, maxnstep, h, bhspin, Rout, Rstop, data = nothing, xoff = 0.0, yoff = 0.0)
     """
@@ -328,7 +330,7 @@ function FiniteDifferences_a(ro, th, phi, DXsize, DYsize, pixels_x, pixels_y, So
     return dI_da, Imagec
 end
 
-function armijo_line_search!(cost_func, x, grad, direction, bounds, 
+function armijo_line_search!(cost_func, x, grad, direction, bounds, scales,
                              args...; α=1e-4, β=0.5, initial_step=1.0, max_steps=10)
     """
     Improved Armijo line search with proper bounds handling and more aggressive stepping
@@ -376,12 +378,12 @@ function armijo_line_search!(cost_func, x, grad, direction, bounds,
         if any_bounded
             println("  Step $i: \e[31mHit bounds\e[0m")
             if x_new[2] == bounds[2][1] || x_new[2] == bounds[2][2]
-                println(" Wanted to try Rhigh = $((x[2] .+ step_size .* direction[2] )* 120.0), but hit bounds at $(x_new[2] * 120.0)")
+                println(" Wanted to try Rhigh = $((x[2] .+ step_size .* direction[2] )* scales[2]), but hit bounds at $(x_new[2] * scales[2])")
                 step_size = (x_new[2] - x[2]) / direction[2]
                 println("")
             end
             if x_new[1] == bounds[1][1] || x_new[1] == bounds[1][2]
-                println(" Wanted to try θo = $((x[1] .+ step_size .* direction[1] )* 60), but hit bounds at $(x_new[1] * 60)")
+                println(" Wanted to try θo = $((x[1] .+ step_size .* direction[1] )* scales[1]), but hit bounds at $(x_new[1] * scales[1])")
                 step_size = (x_new[1] - x[1]) / direction[1]
             end
             #continue
@@ -397,7 +399,7 @@ function armijo_line_search!(cost_func, x, grad, direction, bounds,
         
         # Evaluate cost at new point
         f_new = cost_func(x_new, args...)
-        println("  Step $i: step_size=$step_size, f_new=$f_new, improvement=$(f0-f_new), Rhigh tested = $(x_new[2] * 120.0), θo tested = $(x_new[1] * 60)")
+        println("  Step $i: step_size=$step_size, f_new=$f_new, improvement=$(f0-f_new), Rhigh tested = $(x_new[2] * scales[2]), θo tested = $(x_new[1] * scales[1])")
         
         # Keep track of best point found so far
         if f_new < best_f
@@ -419,7 +421,7 @@ function armijo_line_search!(cost_func, x, grad, direction, bounds,
         step_size *= β
         
         # If step becomes too small, return best point found
-        if abs(x_new[1] - x[1]) < 1e-3 && abs(x_new[2] - x[2]) < 1e-3
+        if abs(x_new[1] - x[1]) < 1e-3 && abs(x_new[2] * scales[2] - x[2] * scales[2]) < 1e-3
             println("  \e[31mBoth parameter changes below 1e-3 threshold, returning best point found\e[0m")
             return best_x, best_f, best_step, false
         end
@@ -539,7 +541,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
         return cost, grad_scaled
     end
     
-    function constrained_armijo_line_search!(cost_func, compute_gradients!, x, grad, direction, bounds, args...; kwargs...)
+    function constrained_armijo_line_search!(cost_func, compute_gradients!, x, grad, direction, bounds, scales, args...; kwargs...)
         constrained_direction = copy(direction)
         if !optimize_theta
             constrained_direction[1] = 0.0
@@ -548,7 +550,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
             constrained_direction[2] = 0.0
         end
         
-        return armijo_line_search!(cost_func, compute_gradients!, x, grad, constrained_direction, bounds, args...; kwargs...)
+        return armijo_line_search!(cost_func, compute_gradients!, x, grad, constrained_direction, bounds, scales, args...; kwargs...)
     end
         
     function check_convergence(cost, grad, cost_history, iteration)
@@ -662,7 +664,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
         x_new, cost_new, step_size, success = constrained_armijo_line_search!(
             (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels)[1],
             (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels)[2],
-            x_scaled, grad, direction, bounds_scaled,
+            x_scaled, grad, direction, bounds_scaled, scales,
             α=1e-5, β=0.5, initial_step=aggressive_initial_step, max_steps=15
         )
         
@@ -687,7 +689,7 @@ function true_conjugate_gradient_optimization(Iobs, ro, θoi, ai, freq, nx, ny, 
             x_new, cost_new, step_size, success = constrained_armijo_line_search!(
                 (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels)[1],
                 (x_val, args...) -> cached_compute_cost_and_gradients(x_val, σ_pixels)[2],
-                x_scaled, grad, direction, bounds_scaled,
+                x_scaled, grad, direction, bounds_scaled, scales,
                 α=1e-5, β=0.5, initial_step=step_size * 10
             )
             
@@ -863,14 +865,14 @@ function true_conjugate_gradient_optimization_GRMHD(Iobs, ro, θoi, Rhighi, freq
     sucess::Bool = false
     
     # Parameter scaling factors (normalize to similar ranges)
-    θo_scale = 1200.0
-    Rhigh_scale = 120.0
+    θo_scale = 600.0
+    Rhigh_scale = 100.0
     scales = [θo_scale, Rhigh_scale]
     
     # Initialize with scaled parameters
     x_scaled = [θoi / θo_scale, Rhighi / Rhigh_scale]
-    bounds_scaled = [(0.1 / θo_scale, 179.9 / θo_scale), 
-                     (0.0 / Rhigh_scale, 200.0 / Rhigh_scale)]
+    bounds_scaled = [(0.1 / θo_scale, 175.0 / θo_scale), 
+                     (0.0 / Rhigh_scale, 100.0 / Rhigh_scale)]
     
     # Determine which parameters to optimize
     optimize_theta = optimize_param in [:both, :theta]
@@ -956,7 +958,7 @@ function true_conjugate_gradient_optimization_GRMHD(Iobs, ro, θoi, Rhighi, freq
         return cost, zeros(2) # Return zero gradients when not computing them
     end
     
-    function constrained_armijo_line_search!(cost_func, x, grad, direction, bounds, args...; kwargs...)
+    function constrained_armijo_line_search!(cost_func, x, grad, direction, bounds, scales, args...; kwargs...)
         constrained_direction = copy(direction)
         if !optimize_theta
             constrained_direction[1] = 0.0
@@ -965,7 +967,7 @@ function true_conjugate_gradient_optimization_GRMHD(Iobs, ro, θoi, Rhighi, freq
             constrained_direction[2] = 0.0
         end
         
-        return armijo_line_search!(cost_func, x, grad, constrained_direction, bounds, args...; kwargs...)
+        return armijo_line_search!(cost_func, x, grad, constrained_direction, bounds, scales, args...; kwargs...)
     end
         
     function check_convergence(cost, grad, cost_history, iteration)
@@ -1047,13 +1049,28 @@ function true_conjugate_gradient_optimization_GRMHD(Iobs, ro, θoi, Rhighi, freq
     x_old = copy(x_scaled)
     step_size = 0.0
     aggressive_initial_step = 0.0
+    direction_old = copy(direction)
     for iteration in 1:max_iterations
         println("\n--- Iteration $iteration ---")
         
         # Line search with constrained direction
         if (iteration == 1)
-            aggressive_initial_step = max(3.0, 0.3 / max(norm(grad), 1e-12))
+            #aggressive_initial_step = max(3.0, 0.3 / max(norm(grad), 1e-12))
             #aggressive_initial_step = 0.3/norm(grad)
+            # Define the maximum physical jump you'll allow in the first step
+            max_dθo_phys = 20.0   # degrees
+            max_dRhigh_phys = 10.0 # Rhigh units
+            
+            # Convert to scaled limits
+            max_dθo_scaled = max_dθo_phys / θo_scale
+            max_dRhigh_scaled = max_dRhigh_phys / Rhigh_scale
+            
+            # Calculate the step size required to hit those limits
+            step_limit_θo = (optimize_theta && abs(direction[1]) > 1e-16) ? (max_dθo_scaled / abs(direction[1])) : Inf
+            step_limit_Rhigh = (optimize_Rhigh && abs(direction[2]) > 1e-16) ? (max_dRhigh_scaled / abs(direction[2])) : Inf
+            
+            # Pick the step size that keeps both parameters within their max jump
+            aggressive_initial_step = min(step_limit_θo, step_limit_Rhigh)
         else
             if(step_size < 0.05/(Rhigh_scale * direction[2] ) && optimize_Rhigh)
                 step_size = 0.05/(Rhigh_scale * direction[2] )
@@ -1065,10 +1082,16 @@ function true_conjugate_gradient_optimization_GRMHD(Iobs, ro, θoi, Rhighi, freq
                 println("Step size for θo is too small, resetting to $step_size")
             end
             if(sucess)
-                println("Line search successful, using step size of $step_size for next iteration")
-                aggressive_initial_step = step_size
+                # Correct the step size based on how the direction vector changed
+                correction_factor = norm(direction_old) / norm(direction)
+                
+                # Cap the correction factor so a crazy beta update doesn't explode the step
+                correction_factor = clamp(correction_factor, 0.1, 10.0) 
+                
+                aggressive_initial_step = step_size * correction_factor
+                println("Line search successful. Scaled previous step size by $correction_factor -> new guess: $aggressive_initial_step")
             else
-                println("Line search failed to find a better point, using aggressive initial step for next iteration")
+                println("Line search failed to find a better point, resetting aggressive initial step")
                 aggressive_initial_step = max(3.0, 0.3 / max(norm(grad), 1e-12))
             end
         end
@@ -1076,7 +1099,7 @@ function true_conjugate_gradient_optimization_GRMHD(Iobs, ro, θoi, Rhighi, freq
         cost_comparison = copy(cost)
         x_new, cost_new, step_size, sucess = constrained_armijo_line_search!(
             (x_val, args...) -> cached_compute_cost_and_gradients(x_val, false, σ_pixels, simulation_data, sensemode)[1],
-            x_scaled, grad, direction, bounds_scaled,
+            x_scaled, grad, direction, bounds_scaled, scales,
             α=1e-5, β=0.5, initial_step=aggressive_initial_step, max_steps=15
         )
         
@@ -1154,6 +1177,12 @@ function true_conjugate_gradient_optimization_GRMHD(Iobs, ro, θoi, Rhighi, freq
                     #print in green color
                     println("\e[32mConverged after escape! Final θo = $(x_scaled[1] * θo_scale), Final Rhigh = $(x_scaled[2] * Rhigh_scale)\e[0m")
                     println("\e[32mFinal cost: $cost\e[0m")
+                    θo_phys = x_scaled[1] * θo_scale
+                    Rhigh_phys = x_scaled[2] * Rhigh_scale
+                    push!(costs, cost)
+
+                    push!(θos, θo_phys)
+                    push!(Rhighs, Rhigh_phys)
                     return θos, Rhighs, costs, max_iterations
                 end
 
@@ -1203,6 +1232,7 @@ function true_conjugate_gradient_optimization_GRMHD(Iobs, ro, θoi, Rhighi, freq
         end
         
         grad_old = copy(grad)
+        direction_old = copy(direction) # ADD THIS LINE
         _, grad = cached_compute_cost_and_gradients(x_scaled, true, σ_pixels, simulation_data, sensemode)
         
         if iteration % cg_restart_freq == 0 || norm(grad) > 10 * norm(grad_old)
@@ -1282,230 +1312,230 @@ function true_conjugate_gradient_optimization_GRMHD(Iobs, ro, θoi, Rhighi, freq
     return θos, Rhighs, costs, max_iterations
 end
 
-using Optim
-using NLSolversBase
-function ConjGradOptim(Iobs, ro, θoi, Rhighi, freq, nx, ny, nmaxstep, 
-                                            fovx, fovy, Rout, Rstop, σ_pixels=0.0; 
-                                            cost_tol=2e-11, param_tol=1e-8, grad_tol=1e-10,
-                                            max_iterations=200, cg_restart_freq=20, # cg_restart_freq is ignored by Optim, but kept for signature compatibility
-                                            optimize_param::Symbol=:both, dump_filepath = nothing, sensemode = "AD")
+# using Optim
+# using NLSolversBase
+# function ConjGradOptim(Iobs, ro, θoi, Rhighi, freq, nx, ny, nmaxstep, 
+#                                             fovx, fovy, Rout, Rstop, σ_pixels=0.0; 
+#                                             cost_tol=2e-11, param_tol=1e-8, grad_tol=1e-10,
+#                                             max_iterations=200, cg_restart_freq=20, # cg_restart_freq is ignored by Optim, but kept for signature compatibility
+#                                             optimize_param::Symbol=:both, dump_filepath = nothing, sensemode = "AD")
 
     
-    num_threads = Threads.nthreads()
-    simulation_data = load_data(dump_filepath, Rhighi);
-    MAX_THREAD_ID = 16
-    thread_trajs = Vector{Vector{OfTraj}}(undef, MAX_THREAD_ID)
-    for tid in 1:MAX_THREAD_ID
-        default_mvector = MVector{4, Float64}(0.0, 0.0, 0.0, 0.0)
-        thread_trajs[tid] = [
-            OfTraj(0.0, 
-                default_mvector, default_mvector, default_mvector, default_mvector,
-                default_mvector, default_mvector, default_mvector, default_mvector) 
-            for _ in 1:nmaxstep
-        ]
-    end
+#     num_threads = Threads.nthreads()
+#     simulation_data = load_data(dump_filepath, Rhighi);
+#     MAX_THREAD_ID = 16
+#     thread_trajs = Vector{Vector{OfTraj}}(undef, MAX_THREAD_ID)
+#     for tid in 1:MAX_THREAD_ID
+#         default_mvector = MVector{4, Float64}(0.0, 0.0, 0.0, 0.0)
+#         thread_trajs[tid] = [
+#             OfTraj(0.0, 
+#                 default_mvector, default_mvector, default_mvector, default_mvector,
+#                 default_mvector, default_mvector, default_mvector, default_mvector) 
+#             for _ in 1:nmaxstep
+#         ]
+#     end
 
-    if !(optimize_param in [:both, :theta, :Rhigh])
-        throw(ArgumentError("optimize_param must be :both, :theta, or :Rhigh"))
-    end
+#     if !(optimize_param in [:both, :theta, :Rhigh])
+#         throw(ArgumentError("optimize_param must be :both, :theta, or :Rhigh"))
+#     end
 
-    if !(sensemode in ["AD", "FD"])
-        throw(ArgumentError("sensemode arg must be either 'AD' or 'FD'"))
-    end
+#     if !(sensemode in ["AD", "FD"])
+#         throw(ArgumentError("sensemode arg must be either 'AD' or 'FD'"))
+#     end
 
-    # Parameter scaling factors (normalize to similar ranges)
-    θo_scale = 60.0
-    Rhigh_scale = 120.0
+#     # Parameter scaling factors (normalize to similar ranges)
+#     θo_scale = 60.0
+#     Rhigh_scale = 120.0
     
-    # Initialize with scaled parameters
-    x_scaled = [θoi / θo_scale, Rhighi / Rhigh_scale]
+#     # Initialize with scaled parameters
+#     x_scaled = [θoi / θo_scale, Rhighi / Rhigh_scale]
     
-    # Setup flat arrays for Optim's Fminbox
-    lower_bounds = [0.1 / θo_scale, 0.0 / Rhigh_scale]
-    upper_bounds = [179.9 / θo_scale, 200.0 / Rhigh_scale]
+#     # Setup flat arrays for Optim's Fminbox
+#     lower_bounds = [0.1 / θo_scale, 0.0 / Rhigh_scale]
+#     upper_bounds = [179.9 / θo_scale, 200.0 / Rhigh_scale]
     
-    # Determine which parameters to optimize
-    # Determine which parameters to optimize
-    optimize_theta = optimize_param in [:both, :theta]
-    optimize_Rhigh = optimize_param in [:both, :Rhigh]
+#     # Determine which parameters to optimize
+#     # Determine which parameters to optimize
+#     optimize_theta = optimize_param in [:both, :theta]
+#     optimize_Rhigh = optimize_param in [:both, :Rhigh]
     
-    # NEW: Create a map of active parameters
-    active_indices = Int[]
-    if optimize_theta; push!(active_indices, 1); end
-    if optimize_Rhigh; push!(active_indices, 2); end
+#     # NEW: Create a map of active parameters
+#     active_indices = Int[]
+#     if optimize_theta; push!(active_indices, 1); end
+#     if optimize_Rhigh; push!(active_indices, 2); end
 
-    # Create arrays containing ONLY the parameters we want to move
-    active_x = x_scaled[active_indices]
-    active_lower = lower_bounds[active_indices]
-    active_upper = upper_bounds[active_indices]
+#     # Create arrays containing ONLY the parameters we want to move
+#     active_x = x_scaled[active_indices]
+#     active_lower = lower_bounds[active_indices]
+#     active_upper = upper_bounds[active_indices]
     
-    println("Optimization mode: $optimize_param")
-    println("Optimizing θo: $optimize_theta, Optimizing Rhigh: $optimize_Rhigh")
+#     println("Optimization mode: $optimize_param")
+#     println("Optimizing θo: $optimize_theta, Optimizing Rhigh: $optimize_Rhigh")
     
-    dI_dθo = Matrix{Float64}(undef, nx, ny)
-    dI_dRhigh = Matrix{Float64}(undef, nx, ny)
-    I_calc = Matrix{Float64}(undef, nx, ny)
+#     dI_dθo = Matrix{Float64}(undef, nx, ny)
+#     dI_dRhigh = Matrix{Float64}(undef, nx, ny)
+#     I_calc = Matrix{Float64}(undef, nx, ny)
 
-    # --- 2. CORE EVALUATION FUNCTIONS (From your original code) ---
-    function compute_cost_and_gradients(x_scaled_val, compute_gradient, σ_pixels=0.0, simulation_data=nothing, sensemode="AD")
-        # Convert back to physical parameters
-        θo_val = x_scaled_val[1] * θo_scale
-        Rhigh_val = x_scaled_val[2] * Rhigh_scale
+#     # --- 2. CORE EVALUATION FUNCTIONS (From your original code) ---
+#     function compute_cost_and_gradients(x_scaled_val, compute_gradient, σ_pixels=0.0, simulation_data=nothing, sensemode="AD")
+#         # Convert back to physical parameters
+#         θo_val = x_scaled_val[1] * θo_scale
+#         Rhigh_val = x_scaled_val[2] * Rhigh_scale
         
-        if optimize_Rhigh 
-            simulation_data = load_data(dump_filepath, Rhigh_val);
-        end
+#         if optimize_Rhigh 
+#             simulation_data = load_data(dump_filepath, Rhigh_val);
+#         end
         
-        if compute_gradient
-            println("\n Running AutoDiffGeoTrajEulerMethod with θo = \e[32m$θo_val\e[0m, Rhigh = \e[32m$Rhigh_val\e[0m and applying σ_pixels = \e[32m$σ_pixels\e[0m filter")
-            if sensemode == "AD"
-                Threads.@threads for i in 0:(nx-1)
-                    for j in 0:(ny-1)
-                        tid = Threads.threadid()
-                        dI_dθo_out = Ref{Float64}()
-                        intensity_out = Ref{Float64}()
-                        dI_dRhigh_out = Ref{Float64}()
+#         if compute_gradient
+#             println("\n Running AutoDiffGeoTrajEulerMethod with θo = \e[32m$θo_val\e[0m, Rhigh = \e[32m$Rhigh_val\e[0m and applying σ_pixels = \e[32m$σ_pixels\e[0m filter")
+#             if sensemode == "AD"
+#                 Threads.@threads for i in 0:(nx-1)
+#                     for j in 0:(ny-1)
+#                         tid = Threads.threadid()
+#                         dI_dθo_out = Ref{Float64}()
+#                         intensity_out = Ref{Float64}()
+#                         dI_dRhigh_out = Ref{Float64}()
                         
-                        AutoDiffGeoTrajEulerMethod_GRMHD!(thread_trajs[tid], dI_dθo_out, intensity_out, dI_dRhigh_out,
-                            ro, θo_val, phi, params.a, nx, ny, nmaxstep, i, j, freq, fovx, fovy, Rout, Rstop, simulation_data)
-                        I_calc[i+1, j+1] = intensity_out[]
-                        dI_dRhigh[i+1, j+1] = dI_dRhigh_out[]
-                        dI_dθo[i+1, j+1] = dI_dθo_out[]
-                    end
-                end
-            elseif sensemode == "FD"
-                println("Using Finite Differences to compute gradients")
-                dI_dθo, I_calc = FiniteDifferencesθ(ro, θo_val, phi, DXsize, DYsize, nx, ny, SourceD, freq, nmaxstep, 1e-4, params.a, Rout, Rstop, simulation_data)
-                if optimize_Rhigh
-                    dI_dRhigh, _ = FiniteDifferences_Rhigh(ro, θo_val, phi, DXsize, DYsize, nx, ny, SourceD, freq, nmaxstep, 1e-4, params.a, Rout, Rstop, simulation_data)
-                end
-            end
+#                         AutoDiffGeoTrajEulerMethod_GRMHD!(thread_trajs[tid], dI_dθo_out, intensity_out, dI_dRhigh_out,
+#                             ro, θo_val, phi, params.a, nx, ny, nmaxstep, i, j, freq, fovx, fovy, Rout, Rstop, simulation_data)
+#                         I_calc[i+1, j+1] = intensity_out[]
+#                         dI_dRhigh[i+1, j+1] = dI_dRhigh_out[]
+#                         dI_dθo[i+1, j+1] = dI_dθo_out[]
+#                     end
+#                 end
+#             elseif sensemode == "FD"
+#                 println("Using Finite Differences to compute gradients")
+#                 dI_dθo, I_calc = FiniteDifferencesθ(ro, θo_val, phi, DXsize, DYsize, nx, ny, SourceD, freq, nmaxstep, 1e-4, params.a, Rout, Rstop, simulation_data)
+#                 if optimize_Rhigh
+#                     dI_dRhigh, _ = FiniteDifferences_Rhigh(ro, θo_val, phi, DXsize, DYsize, nx, ny, SourceD, freq, nmaxstep, 1e-4, params.a, Rout, Rstop, simulation_data)
+#                 end
+#             end
             
-            I_calc = imfilter(I_calc, Kernel.gaussian(σ_pixels))
-            dI_dθo = imfilter(dI_dθo, Kernel.gaussian(σ_pixels))
-            dI_dRhigh = imfilter(dI_dRhigh, Kernel.gaussian(σ_pixels))
+#             I_calc = imfilter(I_calc, Kernel.gaussian(σ_pixels))
+#             dI_dθo = imfilter(dI_dθo, Kernel.gaussian(σ_pixels))
+#             dI_dRhigh = imfilter(dI_dRhigh, Kernel.gaussian(σ_pixels))
             
-            cost = cost_func(Iobs, I_calc)
-            grad_θo, grad_Rhigh = GradientofCostFunction(Iobs, I_calc, dI_dθo, dI_dRhigh)
-            grad_scaled = [grad_θo * θo_scale, grad_Rhigh * Rhigh_scale]
+#             cost = cost_func(Iobs, I_calc)
+#             grad_θo, grad_Rhigh = GradientofCostFunction(Iobs, I_calc, dI_dθo, dI_dRhigh)
+#             grad_scaled = [grad_θo * θo_scale, grad_Rhigh * Rhigh_scale]
             
-            return cost, grad_scaled
-        else 
-            println("\n Computing image with \e[32mθo = $θo_val\e[0m, \e[32mRhigh = $Rhigh_val\e[0m and applying σ_pixels = \e[32m$σ_pixels\e[0m filter")
-            Xcamera = MVec4(camera_position(ro, θo_val, phi, params.a, params.Rout))
-            scale_factor = CalculateScaleFactor(DXsize, DYsize, nx, ny, SourceD, L_unit)
+#             return cost, grad_scaled
+#         else 
+#             println("\n Computing image with \e[32mθo = $θo_val\e[0m, \e[32mRhigh = $Rhigh_val\e[0m and applying σ_pixels = \e[32m$σ_pixels\e[0m filter")
+#             Xcamera = MVec4(camera_position(ro, θo_val, phi, params.a, params.Rout))
+#             scale_factor = CalculateScaleFactor(DXsize, DYsize, nx, ny, SourceD, L_unit)
             
-            Threads.@threads for i in 0:(nx - 1)
-                tid = Threads.threadid()
-                for j in 0:(ny - 1)
-                    sizehint!(thread_trajs[tid], nmaxstep)
-                    nstep = get_pixel(thread_trajs[tid], i, j, Xcamera, nmaxstep, fovx, fovy, freq_unitless, nx, ny, params.a, Rh, params.Rout, Rstop, xoff, yoff) 
+#             Threads.@threads for i in 0:(nx - 1)
+#                 tid = Threads.threadid()
+#                 for j in 0:(ny - 1)
+#                     sizehint!(thread_trajs[tid], nmaxstep)
+#                     nstep = get_pixel(thread_trajs[tid], i, j, Xcamera, nmaxstep, fovx, fovy, freq_unitless, nx, ny, params.a, Rh, params.Rout, Rstop, xoff, yoff) 
                     
-                    resize!(thread_trajs[tid], nstep)
-                    integrate_emission!(thread_trajs[tid], nstep, I_calc, i + 1, j + 1, freq, params.a, simulation_data)
-                end
-            end   
-            I_calc *= freq^3
-            imfilter(I_calc, Kernel.gaussian(σ_pixels))
-            cost = cost_func(Iobs, I_calc)
+#                     resize!(thread_trajs[tid], nstep)
+#                     integrate_emission!(thread_trajs[tid], nstep, I_calc, i + 1, j + 1, freq, params.a, simulation_data)
+#                 end
+#             end   
+#             I_calc *= freq^3
+#             imfilter(I_calc, Kernel.gaussian(σ_pixels))
+#             cost = cost_func(Iobs, I_calc)
 
-            return cost, zeros(2)
-        end
-    end
+#             return cost, zeros(2)
+#         end
+#     end
 
-    # Keep caching to prevent redundant radiative transfer integrations
-    last_x_computed = nothing
-    last_cost = nothing
-    last_grad = nothing
-    last_had_gradients = false 
+#     # Keep caching to prevent redundant radiative transfer integrations
+#     last_x_computed = nothing
+#     last_cost = nothing
+#     last_grad = nothing
+#     last_had_gradients = false 
 
-    function cached_compute_cost_and_gradients(x_scaled_val, compute_gradients, σ_pixels=0.0, simulation_data=nothing, sensemode="AD")
-        if last_x_computed !== nothing && last_x_computed ≈ x_scaled_val
-            if !compute_gradients || last_had_gradients
-                println("Using cached computation for x = $x_scaled_val (has_gradients: $last_had_gradients)")
-                return last_cost, last_grad
-            end
-        end
+#     function cached_compute_cost_and_gradients(x_scaled_val, compute_gradients, σ_pixels=0.0, simulation_data=nothing, sensemode="AD")
+#         if last_x_computed !== nothing && last_x_computed ≈ x_scaled_val
+#             if !compute_gradients || last_had_gradients
+#                 println("Using cached computation for x = $x_scaled_val (has_gradients: $last_had_gradients)")
+#                 return last_cost, last_grad
+#             end
+#         end
         
-        cost, grad = compute_cost_and_gradients(x_scaled_val, compute_gradients, σ_pixels, simulation_data, sensemode)
-        last_x_computed = copy(x_scaled_val)
-        last_cost = cost
-        last_grad = copy(grad)
-        last_had_gradients = compute_gradients
-        return cost, grad
-    end
+#         cost, grad = compute_cost_and_gradients(x_scaled_val, compute_gradients, σ_pixels, simulation_data, sensemode)
+#         last_x_computed = copy(x_scaled_val)
+#         last_cost = cost
+#         last_grad = copy(grad)
+#         last_had_gradients = compute_gradients
+#         return cost, grad
+#     end
 
 
-    # --- 3. OPTIM.JL INTEGRATION ---
+#     # --- 3. OPTIM.JL INTEGRATION ---
     
-    # History tracking arrays
-    costs = Float64[]
-    θos = Float64[]
-    Rhighs = Float64[]
+#     # History tracking arrays
+#     costs = Float64[]
+#     θos = Float64[]
+#     Rhighs = Float64[]
 
-    # The fg! interface required by Optim.jl for joint cost/gradient evaluation
-    function fg!(F, G, x_opt)
-        x_full = copy(x_scaled) 
-        x_full[active_indices] .= x_opt
+#     # The fg! interface required by Optim.jl for joint cost/gradient evaluation
+#     function fg!(F, G, x_opt)
+#         x_full = copy(x_scaled) 
+#         x_full[active_indices] .= x_opt
         
-        compute_grads = G !== nothing 
-        cost, grad_full = cached_compute_cost_and_gradients(x_full, compute_grads, σ_pixels, simulation_data, sensemode)
+#         compute_grads = G !== nothing 
+#         cost, grad_full = cached_compute_cost_and_gradients(x_full, compute_grads, σ_pixels, simulation_data, sensemode)
 
-        # NEW: Scale up the objective so the optimizer takes bigger steps!
-        cost_scale = 100000.0 
+#         # NEW: Scale up the objective so the optimizer takes bigger steps!
+#         cost_scale = 100000.0 
 
-        if G !== nothing
-            G .= grad_full[active_indices] .* cost_scale
-        end
+#         if G !== nothing
+#             G .= grad_full[active_indices] .* cost_scale
+#         end
 
-        if F !== nothing
-            return cost * cost_scale
-        end
-    end
+#         if F !== nothing
+#             return cost * cost_scale
+#         end
+#     end
 
-    function trace_callback(tr)
-        curr_opt_x = hasproperty(tr, :x) ? tr.x : tr.metadata["x"]
-        curr_cost = hasproperty(tr, :f_x) ? tr.f_x : tr.value
+#     function trace_callback(tr)
+#         curr_opt_x = hasproperty(tr, :x) ? tr.x : tr.metadata["x"]
+#         curr_cost = hasproperty(tr, :f_x) ? tr.f_x : tr.value
         
-        # Reconstruct full x for tracking history
-        curr_full_x = copy(x_scaled)
-        curr_full_x[active_indices] .= curr_opt_x
+#         # Reconstruct full x for tracking history
+#         curr_full_x = copy(x_scaled)
+#         curr_full_x[active_indices] .= curr_opt_x
         
-        push!(costs, curr_cost)
-        push!(θos, curr_full_x[1] * θo_scale)
-        push!(Rhighs, curr_full_x[2] * Rhigh_scale)
+#         push!(costs, curr_cost)
+#         push!(θos, curr_full_x[1] * θo_scale)
+#         push!(Rhighs, curr_full_x[2] * Rhigh_scale)
         
-        return false 
-    end
+#         return false 
+#     end
 
    
 
-    # Wrap function for Optim, passing only the active initial array
-    objective = OnceDifferentiable(NLSolversBase.only_fg!(fg!), active_x)
+#     # Wrap function for Optim, passing only the active initial array
+#     objective = OnceDifferentiable(NLSolversBase.only_fg!(fg!), active_x)
 
-    println("Starting Optim.jl Fminbox(LBFGS())...")
+#     println("Starting Optim.jl Fminbox(LBFGS())...")
 
-    # Run the optimization using the active subset
-    result = optimize(objective, active_lower, active_upper, active_x, 
-                      Fminbox(LBFGS()), 
-                      Optim.Options(
-                          iterations = max_iterations,
-                          f_reltol = cost_tol,
-                          g_tol = grad_tol,
-                          x_abstol = param_tol,
-                          show_trace = true,
-                          extended_trace = true,
-                          callback = trace_callback
-                      ))
+#     # Run the optimization using the active subset
+#     result = optimize(objective, active_lower, active_upper, active_x, 
+#                       Fminbox(LBFGS()), 
+#                       Optim.Options(
+#                           iterations = max_iterations,
+#                           f_reltol = cost_tol,
+#                           g_tol = grad_tol,
+#                           x_abstol = param_tol,
+#                           show_trace = true,
+#                           extended_trace = true,
+#                           callback = trace_callback
+#                       ))
 
-    # --- 4. EXTRACT RESULTS ---
-    println("\n--- Optimization Finished! ---")
-    println(result)
+#     # --- 4. EXTRACT RESULTS ---
+#     println("\n--- Optimization Finished! ---")
+#     println(result)
     
-    # Optional: If you want to ensure the very first point is in your history arrays,
-    # you can prepend them or just rely on the trace_callback output.
+#     # Optional: If you want to ensure the very first point is in your history arrays,
+#     # you can prepend them or just rely on the trace_callback output.
     
-    total_iters = Optim.iterations(result)
+#     total_iters = Optim.iterations(result)
     
-    return θos, Rhighs, costs, total_iters
-end
+#     return θos, Rhighs, costs, total_iters
+# end
